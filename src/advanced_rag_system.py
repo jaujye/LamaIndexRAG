@@ -4,17 +4,20 @@ Supports multiple knowledge bases (Food Safety Act, Labor Law)
 """
 
 import json
+import os
 from typing import List, Dict, Any, Optional, Tuple, Union
 import numpy as np
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from llama_index.core import VectorStoreIndex, StorageContext, Settings
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core.schema import NodeWithScore, QueryBundle
+from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
 from llama_index.core.retrievers import BaseRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.response_synthesizers import get_response_synthesizer
 from llama_index.core.postprocessor import SimilarityPostprocessor
+from llama_index.embeddings.openai import OpenAIEmbedding
+from dotenv import load_dotenv
 try:
     from llama_index.embeddings.onnx import OnnxEmbedding
     ONNX_AVAILABLE = True
@@ -146,28 +149,24 @@ class HybridRetriever(BaseRetriever):
     def __init__(
         self,
         vector_retrievers: Dict[str, BaseRetriever],
+        chroma_client,  # Pass the properly configured ChromaDB client
         alpha: float = 0.7,  # Weight for semantic search
         top_k: int = 10
     ):
         super().__init__()
         self.vector_retrievers = vector_retrievers
+        self.chroma_client = chroma_client  # Use the same client as main system
         self.alpha = alpha
         self.beta = 1.0 - alpha  # Weight for keyword search
         self.top_k = top_k
         self.query_expander = LegalQueryExpander()
 
     def keyword_search(self, query_context: QueryContext, collection_name: str) -> List[RetrievalResult]:
-        """Perform keyword-based search using jieba segmentation"""
+        """Perform keyword-based search using the same ChromaDB client and embedding model"""
         results = []
 
-        # Connect to ChromaDB
-        try:
-            if hasattr(self, 'chroma_client'):
-                client = self.chroma_client
-            else:
-                client = chromadb.HttpClient(host="192.168.0.114", port=7000)
-        except:
-            client = chromadb.PersistentClient(path="chroma_db")
+        # Use the properly configured ChromaDB client (same as main system)
+        client = self.chroma_client
 
         try:
             collection = client.get_collection(collection_name)
@@ -175,9 +174,16 @@ class HybridRetriever(BaseRetriever):
             # Create search terms from expanded query
             search_terms = ' '.join(query_context.expanded_terms)
 
-            # Query ChromaDB with keyword matching
+            # Use the same embedding model as the main system for consistent dimensions
+            from llama_index.core import Settings
+            embed_model = Settings.embed_model
+
+            # Generate embedding using the configured 1536-dim model
+            query_embedding = embed_model.get_text_embedding(search_terms)
+
+            # Query ChromaDB with proper embedding
             chroma_results = collection.query(
-                query_texts=[search_terms],
+                query_embeddings=[query_embedding],
                 n_results=min(self.top_k * 2, 20)  # Get more for filtering
             )
 
@@ -191,13 +197,16 @@ class HybridRetriever(BaseRetriever):
                     # Calculate keyword score based on term frequency
                     keyword_score = self._calculate_keyword_score(doc, query_context)
 
-                    # Create a mock NodeWithScore (simplified for keyword search)
+                    # Create proper TextNode for LlamaIndex compatibility
+                    text_node = TextNode(
+                        text=doc,
+                        metadata=metadata,
+                        id_=metadata.get('chunk_id', f'keyword_{i}')
+                    )
+
+                    # Create NodeWithScore with proper TextNode
                     node = NodeWithScore(
-                        node=type('MockNode', (), {
-                            'text': doc,
-                            'metadata': metadata,
-                            'id_': metadata.get('chunk_id', f'keyword_{i}')
-                        })(),
+                        node=text_node,
                         score=1 - distance  # Convert distance to similarity
                     )
 
@@ -388,13 +397,24 @@ class AdvancedRAGSystem:
 
     def __init__(
         self,
-        chroma_host: str = "192.168.0.114",
-        chroma_port: int = 7000,
-        local_db_path: str = "chroma_db"
+        chroma_host: str = None,
+        chroma_port: int = None,
+        local_db_path: str = None
     ):
-        self.chroma_host = chroma_host
-        self.chroma_port = chroma_port
-        self.local_db_path = local_db_path
+        # Load environment variables
+        load_dotenv()
+
+        # Use provided values or fall back to environment variables with sensible defaults
+        self.chroma_host = chroma_host or os.getenv("CHROMA_HOST") or "localhost"
+
+        # Handle empty string for CHROMA_PORT
+        port_env = os.getenv("CHROMA_PORT", "8000")
+        if port_env and port_env.strip():
+            self.chroma_port = chroma_port or int(port_env)
+        else:
+            self.chroma_port = chroma_port or 8000
+
+        self.local_db_path = local_db_path or os.getenv("CHROMA_DB_PATH", "chroma_db")
         self.vector_stores = {}
         self.retrievers = {}
         self.hybrid_retriever = None
@@ -406,25 +426,44 @@ class AdvancedRAGSystem:
     def _init_vector_stores(self):
         """Initialize vector stores for different collections"""
 
-        # Configure local embedding model
+        # Configure OpenAI embedding model to match collection dimensions (1536)
         try:
+            load_dotenv()
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("OpenAI API key not found")
+
+            embed_model = OpenAIEmbedding(
+                api_key=api_key,
+                model="text-embedding-3-small"  # 1536 dimensions to match collections
+            )
+            Settings.embed_model = embed_model
+            print("[OK] Using OpenAI text-embedding-3-small (1536 dims)")
+        except Exception as e:
+            print(f"[WARN] OpenAI embedding configuration failed: {e}")
+            # Fallback to ONNX if available (but dimensions won't match existing collections)
             if ONNX_AVAILABLE:
                 embed_model = OnnxEmbedding()
                 Settings.embed_model = embed_model
-                print("[OK] Using local ONNX embeddings")
+                print("[WARN] Fallback to ONNX embeddings (384 dims) - dimension mismatch expected")
             else:
-                # Use the default embedding model (should work without external dependencies)
-                Settings.embed_model = "local"
-                print("[OK] Using default local embeddings")
-        except Exception as e:
-            print(f"[WARN] Local embedding configuration failed: {e}")
-            print("[OK] Using default embedding settings")
+                print("[ERROR] No suitable embedding model available")
+                raise
 
         # Try remote ChromaDB first, fallback to local
+        # Configure ChromaDB settings to disable telemetry (comprehensive approach)
+        chroma_settings = ChromaSettings(
+            anonymized_telemetry=False,
+            allow_reset=True,
+            chroma_server_ssl_enabled=False,
+            chroma_server_cors_allow_origins=["*"]
+        )
+
         try:
             chroma_client = chromadb.HttpClient(
                 host=self.chroma_host,
-                port=self.chroma_port
+                port=self.chroma_port,
+                settings=chroma_settings
             )
             # Test connection
             chroma_client.heartbeat()
@@ -432,7 +471,17 @@ class AdvancedRAGSystem:
         except Exception as e:
             print(f"[WARN] Remote ChromaDB failed: {e}")
             print(f"[OK] Using local ChromaDB at: {self.local_db_path}")
-            chroma_client = chromadb.PersistentClient(path=self.local_db_path)
+
+            # For local ChromaDB, don't specify tenant/database to avoid validation issues
+            try:
+                chroma_client = chromadb.PersistentClient(
+                    path=self.local_db_path,
+                    settings=chroma_settings
+                )
+            except Exception as local_error:
+                print(f"[WARN] Local ChromaDB with settings failed: {local_error}")
+                # Last resort: minimal configuration
+                chroma_client = chromadb.PersistentClient(path=self.local_db_path)
 
         # Initialize collections (using correct names)
         collections = ['food_safety_act', 'labor_law']
@@ -459,10 +508,11 @@ class AdvancedRAGSystem:
             except Exception as e:
                 print(f"[WARN] Failed to initialize {collection_name}: {e}")
 
-        # Create hybrid retriever
+        # Create hybrid retriever with the same ChromaDB client
         if self.retrievers:
             self.hybrid_retriever = HybridRetriever(
                 vector_retrievers=self.retrievers,
+                chroma_client=chroma_client,  # Pass the configured client
                 alpha=0.7,  # 70% semantic, 30% keyword
                 top_k=10
             )

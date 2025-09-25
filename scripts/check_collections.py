@@ -3,13 +3,20 @@ Check available ChromaDB collections
 """
 
 import chromadb
+import os
+from dotenv import load_dotenv
 
 def check_chroma_collections():
     """Check what collections exist in ChromaDB"""
+    # Load environment variables
+    load_dotenv()
+
     try:
-        # Try remote first
+        # Try remote first - use environment variables
         print("Checking remote ChromaDB...")
-        client = chromadb.HttpClient(host="192.168.0.114", port=7000)
+        host = os.getenv("CHROMA_HOST", "localhost")
+        port = int(os.getenv("CHROMA_PORT", "8000"))
+        client = chromadb.HttpClient(host=host, port=port)
         client.heartbeat()
         print("[OK] Connected to remote ChromaDB")
     except Exception as e:

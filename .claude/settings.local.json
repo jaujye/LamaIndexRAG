@@ -37,7 +37,11 @@
       "Bash(py tests/test_labor_fetcher.py)",
       "Bash(py test_import_structure.py)",
       "Bash(py:*)",
-      "Bash(del test_import.py test_import_structure.py test_script_imports.py)"
+      "Bash(del test_import.py test_import_structure.py test_script_imports.py)",
+      "Bash(git commit:*)",
+      "Bash(.venv/Scripts/python.exe main.py:*)",
+      "Bash(python:*)",
+      "Bash(.venv/Scripts/python.exe:*)"
     ],
     "deny": [],
     "ask": []

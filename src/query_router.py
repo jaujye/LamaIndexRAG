@@ -287,7 +287,22 @@ class ResponseFusion:
 class QueryRouter:
     """Main query router orchestrating the multi-domain legal RAG system"""
 
-    def __init__(self, chroma_host: str = "192.168.0.114", chroma_port: int = 7000):
+    def __init__(self, chroma_host: str = None, chroma_port: int = None):
+        # Load environment variables
+        from dotenv import load_dotenv
+        import os
+        load_dotenv()
+
+        # Use provided values or fall back to environment variables
+        chroma_host = chroma_host or os.getenv("CHROMA_HOST") or "localhost"
+
+        # Handle empty string for CHROMA_PORT
+        port_env = os.getenv("CHROMA_PORT", "8000")
+        if port_env and port_env.strip():
+            chroma_port = chroma_port or int(port_env)
+        else:
+            chroma_port = chroma_port or 8000
+
         self.classifier = LegalDomainClassifier()
         self.query_expander = LegalQueryExpander()
         self.response_fusion = ResponseFusion()

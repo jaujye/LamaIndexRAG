@@ -14,6 +14,39 @@ from typing import Optional, List
 import json
 from datetime import datetime
 
+# Fix Windows console encoding issues
+if sys.platform == "win32":
+    import locale
+    # Set console encoding to UTF-8
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    # Set environment variable for subprocess calls
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+
+# Disable ChromaDB telemetry completely (multiple methods for compatibility)
+os.environ['ANONYMIZED_TELEMETRY'] = 'False'
+os.environ['CHROMA_TELEMETRY'] = 'False'
+os.environ['CHROMA_SERVER_NOFILE'] = '65536'
+os.environ['CHROMA_SERVER_CORS_ALLOW_ORIGINS'] = '["*"]'
+
+# Additional telemetry disabling and log level control
+try:
+    import chromadb
+    from chromadb.config import Settings as ChromaSettings
+    import logging
+
+    # Set global ChromaDB settings to disable telemetry
+    chromadb.configure(anonymized_telemetry=False)
+
+    # Suppress ChromaDB telemetry and verbose logging
+    logging.getLogger('chromadb.telemetry.product.posthog').setLevel(logging.CRITICAL)
+    logging.getLogger('chromadb').setLevel(logging.WARNING)
+
+except Exception:
+    pass  # Continue if chromadb not available yet
+
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -37,7 +70,14 @@ class LegalRAGCLI:
     """台灣法規RAG系統的CLI介面，支持食品安全法、勞基法及多法規整合查詢，整合 W&B 監控"""
 
     def __init__(self, enable_monitoring: bool = True):
-        self.console = Console()
+        # Initialize console with UTF-8 for Windows compatibility
+        try:
+            self.console = Console(force_terminal=True, width=None)
+            # Try to configure Rich console for UTF-8 on Windows
+            if sys.platform == "win32":
+                self.console._file = sys.stdout
+        except Exception:
+            self.console = Console()
         self.food_safety_data_file = Path("data/food_safety_act.json")
         self.labor_law_data_file = Path("data/labor_standards_act.json")
         self.env_file = Path(".env")
@@ -410,17 +450,11 @@ class LegalRAGCLI:
         try:
             self.console.print("\n[yellow]初始化多法規整合查詢系統...[/yellow]")
 
-            # 初始化查詢路由器
-            self.query_router = QueryRouter(
-                chroma_host="192.168.0.114",
-                chroma_port=7000
-            )
+            # 初始化查詢路由器（使用環境變數設定）
+            self.query_router = QueryRouter()
 
-            # 初始化進階RAG系統
-            self.advanced_rag_system = AdvancedRAGSystem(
-                chroma_host="192.168.0.114",
-                chroma_port=7000
-            )
+            # 初始化進階RAG系統（使用環境變數設定）
+            self.advanced_rag_system = AdvancedRAGSystem()
 
             self.console.print("[OK] 多法規整合系統初始化完成")
 
@@ -996,7 +1030,7 @@ def main():
     # 批次處理和統計參數
     parser.add_argument("--batch", dest="batch_file",
                        help="批次查詢檔案路徑")
-    parser.add_argument("--all-stats", action="store_true",
+    parser.add_argument("--all-stats", dest="show_all_stats", action="store_true",
                        help="顯示所有法規索引統計資訊")
 
     # 系統參數

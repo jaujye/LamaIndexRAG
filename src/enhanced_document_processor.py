@@ -133,17 +133,42 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
             for pattern in patterns:
                 matches = re.finditer(pattern, content)
                 for match in matches:
-                    if ref_type == 'direct' and match.group(1):
-                        # Direct article reference
-                        to_article = match.group(1)
-                        if to_article != article_number:  # Avoid self-reference
+                    if ref_type == 'direct':
+                        # Check if pattern has capturing groups
+                        if match.lastindex and match.lastindex >= 1:
+                            # Direct article reference with specific number (第X條)
+                            to_article = match.group(1)
+                            if to_article != article_number:  # Avoid self-reference
+                                context = self._extract_context(content, match.start(), match.end())
+                                ref = CrossReference(
+                                    from_article=article_number,
+                                    to_article=to_article,
+                                    reference_type=ref_type,
+                                    context=context,
+                                    confidence=0.9
+                                )
+                                references.append(ref)
+                        else:
+                            # Relative reference (前條, 本條, 次條) - no specific article number
                             context = self._extract_context(content, match.start(), match.end())
+                            matched_text = match.group(0)
+
+                            # Determine reference type based on matched text
+                            if '前' in matched_text:
+                                to_article = 'previous'
+                            elif '本' in matched_text:
+                                to_article = 'current'
+                            elif '次' in matched_text:
+                                to_article = 'next'
+                            else:
+                                to_article = 'relative'
+
                             ref = CrossReference(
                                 from_article=article_number,
                                 to_article=to_article,
-                                reference_type=ref_type,
+                                reference_type='relative',
                                 context=context,
-                                confidence=0.9
+                                confidence=0.7  # Lower confidence for relative references
                             )
                             references.append(ref)
 
