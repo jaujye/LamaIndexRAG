@@ -1,0 +1,293 @@
+{
+  "component_tests": {
+    "query_expansion": {
+      "status": "FAIL",
+      "average_processing_time_ms": 0.4002571105957031,
+      "average_accuracy": 0.6,
+      "total_tests": 5,
+      "individual_results": [
+        {
+          "query": "勞動契約",
+          "processing_time": 2.0012855529785156,
+          "accuracy": 1.0,
+          "expanded_terms_count": 4,
+          "legal_concepts": [],
+          "intent_detected": "general"
+        },
+        {
+          "query": "工資",
+          "processing_time": 0.0,
+          "accuracy": 1.0,
+          "expanded_terms_count": 5,
+          "legal_concepts": [],
+          "intent_detected": "general"
+        },
+        {
+          "query": "食品安全",
+          "processing_time": 0.0,
+          "accuracy": 1.0,
+          "expanded_terms_count": 4,
+          "legal_concepts": [],
+          "intent_detected": "general"
+        },
+        {
+          "query": "什麼是工作時間",
+          "processing_time": 0.0,
+          "accuracy": 0.0,
+          "expanded_terms_count": 1,
+          "legal_concepts": [
+            "definition"
+          ],
+          "intent_detected": "definition"
+        },
+        {
+          "query": "違反規定的處罰",
+          "processing_time": 0.0,
+          "accuracy": 0.0,
+          "expanded_terms_count": 1,
+          "legal_concepts": [
+            "penalty"
+          ],
+          "intent_detected": "penalty"
+        }
+      ]
+    },
+    "domain_classification": {
+      "status": "PASS",
+      "accuracy": 1.0,
+      "average_processing_time_ms": 0.0,
+      "average_confidence": 0.92,
+      "total_tests": 5,
+      "individual_results": [
+        {
+          "query": "勞動契約的規定",
+          "expected_kb": "labor_law",
+          "actual_kb": "labor_law",
+          "secondary_kbs": [],
+          "confidence": 1.0,
+          "processing_time": 0.0,
+          "correct": true
+        },
+        {
+          "query": "食品添加物標示",
+          "expected_kb": "food_safety_act",
+          "actual_kb": "food_safety_act",
+          "secondary_kbs": [],
+          "confidence": 1.0,
+          "processing_time": 0.0,
+          "correct": true
+        },
+        {
+          "query": "餐廳員工工作時間",
+          "expected_kb": "all",
+          "actual_kb": "all",
+          "secondary_kbs": [
+            "labor_law",
+            "food_safety_act"
+          ],
+          "confidence": 0.9,
+          "processing_time": 0.0,
+          "correct": true
+        },
+        {
+          "query": "什麼是職業安全",
+          "expected_kb": "all",
+          "actual_kb": "all",
+          "secondary_kbs": [
+            "labor_law",
+            "food_safety_act"
+          ],
+          "confidence": 0.8,
+          "processing_time": 0.0,
+          "correct": true
+        },
+        {
+          "query": "勞工食品安全訓練",
+          "expected_kb": "all",
+          "actual_kb": "all",
+          "secondary_kbs": [
+            "labor_law",
+            "food_safety_act"
+          ],
+          "confidence": 0.9,
+          "processing_time": 0.0,
+          "correct": true
+        }
+      ]
+    },
+    "document_processing": {
+      "status": "PASS",
+      "quality_score": 1.0,
+      "processing_time_ms": 3.0014514923095703,
+      "details": {
+        "processing_time": 3.0014514923095703,
+        "chunks_created": 1,
+        "has_keywords": true,
+        "keyword_count": 4,
+        "has_concepts": true,
+        "concept_count": 1,
+        "importance_score": 0.1,
+        "has_cross_references": false
+      }
+    }
+  },
+  "integration_tests": {
+    "query_routing": {
+      "status": "PARTIAL",
+      "average_processing_time_ms": 0.2498030662536621,
+      "response_success_rate": 0.0,
+      "total_tests": 4,
+      "results": [
+        {
+          "query": "勞動契約的定義",
+          "processing_time": 0.0,
+          "primary_kb": "all",
+          "confidence": 0.8,
+          "has_response": false,
+          "kbs_queried": 0
+        },
+        {
+          "query": "食品添加物標示規定",
+          "processing_time": 0.0,
+          "primary_kb": "food_safety_act",
+          "confidence": 1.0,
+          "has_response": false,
+          "kbs_queried": 0
+        },
+        {
+          "query": "餐廳員工的安全規定",
+          "processing_time": 0.9992122650146484,
+          "primary_kb": "labor_law",
+          "confidence": 0.24,
+          "has_response": false,
+          "kbs_queried": 0
+        },
+        {
+          "query": "違反法規的處罰",
+          "processing_time": 0.0,
+          "primary_kb": "labor_law",
+          "confidence": 0.16000000000000003,
+          "has_response": false,
+          "kbs_queried": 0
+        }
+      ]
+    },
+    "cross_domain": {
+      "status": "PASS",
+      "detection_rate": 1.0,
+      "total_tests": 3,
+      "results": [
+        {
+          "query": "食品工廠員工的工作安全規定",
+          "processing_time": 0.0,
+          "detected_cross_domain": true,
+          "kbs_queried": 0,
+          "fusion_applied": false
+        },
+        {
+          "query": "餐廳業者與員工的勞動關係",
+          "processing_time": 0.0,
+          "detected_cross_domain": true,
+          "kbs_queried": 0,
+          "fusion_applied": false
+        },
+        {
+          "query": "食品製造業的職業安全衛生",
+          "processing_time": 0.0,
+          "detected_cross_domain": true,
+          "kbs_queried": 0,
+          "fusion_applied": false
+        }
+      ]
+    }
+  },
+  "performance_metrics": {
+    "response_times": {
+      "average_ms": 0.0,
+      "std_deviation_ms": 0.0,
+      "min_ms": 0.0,
+      "max_ms": 0.0,
+      "total_queries": 4
+    },
+    "concurrent_queries": {
+      "total_queries": 5,
+      "successful_queries": 5,
+      "total_time_seconds": 0.0,
+      "throughput_qps": 0
+    }
+  },
+  "edge_case_tests": {
+    "graceful_handling_rate": 1.0,
+    "total_tests": 6,
+    "results": [
+      {
+        "query": "",
+        "description": "Empty query",
+        "handled_gracefully": true,
+        "has_response": false,
+        "has_error": false
+      },
+      {
+        "query": "   ",
+        "description": "Whitespace only",
+        "handled_gracefully": true,
+        "has_response": false,
+        "has_error": false
+      },
+      {
+        "query": "a",
+        "description": "Single character",
+        "handled_gracefully": true,
+        "has_response": false,
+        "has_error": false
+      },
+      {
+        "query": "123",
+        "description": "Numbers only",
+        "handled_gracefully": true,
+        "has_response": false,
+        "has_error": false
+      },
+      {
+        "query": "!@#$%",
+        "description": "Special characters only",
+        "handled_gracefully": true,
+        "has_response": false,
+        "has_error": false
+      },
+      {
+        "query": "這是一個非常長的查詢句子包含了很多不相關的詞語和內容用來測試系統的處理能力",
+        "description": "Very long query",
+        "handled_gracefully": true,
+        "has_response": false,
+        "has_error": false
+      }
+    ]
+  },
+  "optimization_recommendations": [
+    {
+      "type": "Functionality",
+      "priority": "High",
+      "issue": "query_expansion component failed tests",
+      "recommendation": "Debug and fix query_expansion component issues"
+    },
+    {
+      "type": "Architecture",
+      "priority": "Medium",
+      "issue": "OpenAI embedding dependency",
+      "recommendation": "Implement local embedding model for better reliability and cost control"
+    },
+    {
+      "type": "Monitoring",
+      "priority": "Low",
+      "issue": "Limited performance monitoring",
+      "recommendation": "Add comprehensive logging and monitoring dashboard"
+    },
+    {
+      "type": "Scalability",
+      "priority": "Low",
+      "issue": "Single-threaded query processing",
+      "recommendation": "Implement async query processing for better concurrency"
+    }
+  ]
+}

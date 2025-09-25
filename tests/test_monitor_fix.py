@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 # 添加專案根目錄到 Python 路徑
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 def test_index_builder_monitor_attribute():
@@ -46,7 +46,7 @@ def test_rag_system_monitor_attribute():
     print("🔍 測試 LegalRAGSystem monitor 屬性...")
 
     try:
-        from src.rag_system import LegalRAGSystem
+        from src.legal_single_domain_rag import LegalRAGSystem
 
         # 這個測試只檢查類別能否正常匯入，不實際初始化
         # 因為需要現有的索引

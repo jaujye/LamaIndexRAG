@@ -39,7 +39,7 @@ class LegalRAGSystem:
                  api_key: Optional[str] = None,
                  chroma_path: str = None,
                  collection_name: str = "food_safety_act",
-                 temperature: float = 0.1,
+                 temperature: float = None,
                  enable_monitoring: bool = True,
                  monitor: Optional[WandbMonitor] = None):
         """
@@ -60,7 +60,7 @@ class LegalRAGSystem:
         # Get chroma path from environment or parameter
         self.chroma_path = chroma_path or os.getenv("CHROMA_DB_PATH", "./chroma_db")
         self.collection_name = collection_name
-        self.temperature = temperature
+        self.temperature = temperature if temperature is not None else float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
 
         # Initialize monitoring FIRST
         self.enable_monitoring = enable_monitoring

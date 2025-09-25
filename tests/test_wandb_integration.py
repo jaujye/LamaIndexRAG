@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 # 添加 src 模組到路徑
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     from src.monitoring import WandbMonitor, RAGMetrics, create_config_from_env

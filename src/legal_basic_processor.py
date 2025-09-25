@@ -4,12 +4,14 @@ Handles chunking while preserving legal structure and metadata
 """
 
 import json
+import os
 import re
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import tiktoken
 from llama_index.core import Document
 from llama_index.core.schema import TextNode
+from dotenv import load_dotenv
 
 
 @dataclass
@@ -33,9 +35,11 @@ class LegalDocumentProcessor:
             chunk_size: Maximum tokens per chunk
             chunk_overlap: Token overlap between chunks
         """
+        load_dotenv()
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.encoding = tiktoken.encoding_for_model("text-embedding-3-small")
+        embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        self.encoding = tiktoken.encoding_for_model(embedding_model)
 
     def count_tokens(self, text: str) -> int:
         """Count tokens in text"""

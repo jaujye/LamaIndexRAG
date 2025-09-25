@@ -20,7 +20,7 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core import Document
 from llama_index.core.schema import TextNode
 
-from .document_processor import LegalDocumentProcessor, LegalChunk
+from .legal_basic_processor import LegalDocumentProcessor, LegalChunk
 from .monitoring import WandbMonitor, RAGMetrics, get_memory_usage, monitor_execution_time
 
 
@@ -31,7 +31,7 @@ class LegalIndexBuilder:
                  api_key: Optional[str] = None,
                  chroma_path: str = None,
                  collection_name: str = "food_safety_act",
-                 embedding_model: str = "text-embedding-3-small",
+                 embedding_model: str = None,
                  enable_monitoring: bool = True,
                  monitor: Optional[WandbMonitor] = None):
         """
@@ -60,7 +60,7 @@ class LegalIndexBuilder:
         else:
             self.chroma_path = None  # Not needed for remote connections
         self.collection_name = collection_name
-        self.embedding_model = embedding_model
+        self.embedding_model = embedding_model or os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
         # Initialize monitoring FIRST (before other methods that use decorators)
         self.enable_monitoring = enable_monitoring
@@ -97,8 +97,8 @@ class LegalIndexBuilder:
 
         LlamaSettings.llm = OpenAI(
             api_key=self.api_key,
-            model="gpt-3.5-turbo",
-            temperature=0.1
+            model=os.getenv("OPENAI_LLM_MODEL", "gpt-3.5-turbo"),
+            temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
         )
 
     @monitor_execution_time("chroma_setup_time")

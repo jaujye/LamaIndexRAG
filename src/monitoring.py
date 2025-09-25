@@ -334,8 +334,8 @@ def create_config_from_env() -> Dict[str, Any]:
         "chunk_overlap": int(os.getenv("CHUNK_OVERLAP", 50)),
         "top_k_retrieval": int(os.getenv("TOP_K_RETRIEVAL", 5)),
         "chroma_db_path": os.getenv("CHROMA_DB_PATH", "./chroma_db"),
-        "embedding_model": "text-embedding-3-small",
-        "llm_model": "gpt-3.5-turbo",
+        "embedding_model": os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        "llm_model": os.getenv("OPENAI_LLM_MODEL", "gpt-3.5-turbo"),
         "law_source": "Taiwan Food Safety and Hygiene Act"
     }
 

@@ -1,4 +1,4 @@
-# 台灣食品安全衛生管理法 RAG 知識檢索系統
+# 台灣法規 RAG 知識檢索系統
 
 ## 技術棧
 
@@ -18,11 +18,11 @@
 
 ## 系統簡介
 
-這是一個基於 LlamaIndex 和 OpenAI 的檢索增強生成（RAG）系統，專門用於查詢台灣食品安全衛生管理法的相關規定。系統會自動從法務部網站擷取最新的法規內容，建立向量索引，並提供智慧問答服務。
+這是一個基於 LlamaIndex 和 OpenAI 的檢索增強生成（RAG）系統，支援台灣多項法規查詢，包括食品安全衛生管理法和勞動基準法。系統會自動從法務部網站擷取最新的法規內容，建立向量索引，並提供智慧問答服務。
 
 ## 功能特色
 
-- 🏛️ **自動法規擷取**：從法務部官網取得最新的食品安全衛生管理法
+- 🏛️ **自動法規擷取**：從法務部官網取得最新的多項法規內容
 - 🔍 **智慧語義搜尋**：使用向量嵌入技術進行精確的條文檢索
 - 🤖 **AI 問答服務**：基於 GPT 模型提供專業的法規解釋
 - 📊 **查詢分類**：自動識別查詢類型（罰則、標示、添加物等）
@@ -67,44 +67,42 @@ WANDB_MODE=online  # online, offline, disabled
 系統提供三種執行方式，依據您的需求選擇：
 
 #### 方式一：簡化版（推薦新手）
+適合快速試用和開發環境
 
 ```bash
-# 使用簡化版，不含監控功能
 python main_no_wandb.py
 ```
 
-**優點**：
+**特色**：
+- ✅ 僅支援食品安全法查詢
 - ✅ 無需額外安裝，立即可用
-- ✅ 包含完整 RAG 功能
-- ✅ 啟動速度快
+- ✅ 啟動速度快，資源消耗低
 
-#### 方式二：完整版（不含監控）
-
-```bash
-# 使用完整版，停用監控功能
-python main.py --no-monitoring
-```
-
-**優點**：
-- ✅ 完整功能，未來可啟用監控
-- ✅ 更好的錯誤處理
-- ✅ 支援所有進階參數
-
-#### 方式三：完整版（含監控）
+#### 方式二：生產版（推薦正式使用）
+支援多法規和完整監控功能
 
 ```bash
-# 首先安裝 W&B
-pip install wandb>=0.15.0
-
-# 使用完整版，含監控功能
 python main.py
 ```
 
-**優點**：
-- 🚀 完整的效能監控和分析
-- 📊 查詢統計和使用趨勢
-- 🔍 錯誤追蹤和系統健康監控
-- 📈 視覺化儀表板
+**特色**：
+- 🚀 支援食品安全法 + 勞動基準法
+- 📊 完整的 W&B 效能監控
+- 🔍 進階查詢路由和分析
+- 📈 生產級錯誤處理
+
+#### 方式三：研究版（實驗性功能）
+最新的 AI 技術和實驗功能
+
+```bash
+python ultrathink.py
+```
+
+**特色**：
+- 🧪 實驗性進階 RAG 功能
+- 🤖 多重查詢增強和重排序
+- 🔬 混合搜索和智慧路由
+- 📊 詳細查詢分析和統計
 
 **系統會自動**：
 1. 檢查環境設定
@@ -113,74 +111,127 @@ python main.py
 4. 初始化監控（如啟用）
 5. 啟動互動式問答介面
 
-### 4. 查詢模式
+### 4. CLI 指令詳解
 
-#### 單一查詢模式
+#### 查詢模式
 
+**單一法規查詢（預設食品安全法）**：
 ```bash
-# 簡化版
-python main_no_wandb.py -q "食品添加物有什麼限制？"
-
-# 完整版
 python main.py -q "食品添加物有什麼限制？"
 ```
 
-#### 批次查詢模式
-
+**多法規整合查詢（智能路由）**：
 ```bash
-# 簡化版
-python main_no_wandb.py --batch config/query_examples.txt
+python main.py --multi-domain -q "勞工食品安全規定"
+```
 
-# 完整版
+**指定特定法規領域查詢**：
+```bash
+python main.py --domain food -q "食品標示規定"
+python main.py --domain labor -q "工時限制規定"
+```
+
+**批次查詢模式**：
+```bash
+# 單一法規批次查詢
 python main.py --batch config/query_examples.txt
+
+# 多法規批次查詢
+python main.py --multi-domain --batch config/query_examples.txt
 ```
 
-### 5. 系統管理指令
+#### 資料管理指令
 
-重新下載法規資料：
+**下載法規資料**：
 ```bash
-# 任選一種方式
-python main_no_wandb.py --fetch-data
-python main.py --fetch-data
+# 下載食品安全衛生管理法資料
+python main.py --fetch-food-data
+
+# 下載勞動基準法資料
+python main.py --fetch-labor-data
 ```
 
-重建向量索引：
+**重建向量索引**：
 ```bash
-# 任選一種方式
-python main_no_wandb.py --rebuild-index
-python main.py --rebuild-index
+# 重建食品安全法向量索引
+python main.py --rebuild-food-index
+
+# 重建勞基法向量索引
+python main.py --rebuild-labor-index
 ```
 
-顯示索引統計：
+#### 系統管理與監控指令
+
+**顯示索引統計資訊**：
 ```bash
-# 任選一種方式
-python main_no_wandb.py --stats
-python main.py --stats
+# 顯示所有法規索引統計
+python main.py --all-stats
 ```
 
-停用監控功能（完整版）：
+**監控控制**：
 ```bash
+# 停用 W&B 監控功能
 python main.py --no-monitoring
+```
+
+#### 互動式查詢模式
+
+**單一法規互動模式**：
+```bash
+python main.py
+```
+
+**多法規整合互動模式**：
+```bash
+python main.py --multi-domain
+```
+
+#### 向後相容指令（已廢棄但仍支援）
+
+```bash
+# 這些指令會自動轉換為新指令
+python main.py --fetch-data     # 自動轉為 --fetch-food-data
+python main.py --rebuild-index  # 自動轉為 --rebuild-food-index
+python main.py --stats          # 自動轉為 --all-stats
 ```
 
 ## 系統架構
 
 ```
 LamaIndex/
-├── src/
-│   ├── data_fetcher.py      # 法規資料擷取
-│   ├── document_processor.py # 文件處理和分塊
-│   ├── index_builder.py     # 向量索引建立
-│   ├── rag_system.py        # RAG 查詢系統
-│   └── monitoring.py        # W&B 監控整合
-├── data/                    # 法規資料儲存
-├── config/                  # 設定檔和範例
-├── chroma_db/              # 向量資料庫
-├── main.py                 # 主程式入口（含監控）
-├── main_no_wandb.py        # 簡化版主程式
-├── requirements.txt        # Python 相依套件
-├── .env.template          # 環境設定範本
-└── doc/                    # 技術文檔和指南
+├── src/                           # 核心應用程式碼
+│   ├── data_fetcher.py           # 法規資料擷取
+│   ├── document_processor.py     # 文件處理和分塊
+│   ├── enhanced_document_processor.py # 增強文件處理
+│   ├── index_builder.py          # 向量索引建立
+│   ├── rag_system.py            # RAG 查詢系統
+│   ├── advanced_rag_system.py   # 進階 RAG 功能
+│   ├── query_router.py          # 查詢路由系統
+│   ├── labor_law_fetcher.py     # 勞基法專用擷取器
+│   └── monitoring.py            # W&B 監控整合
+├── tests/                        # 測試套件
+│   ├── test_*.py                # 各模組測試
+│   └── ...
+├── scripts/                      # 工具腳本
+│   ├── build_labor_index.py     # 勞基法索引建構
+│   ├── check_collections.py     # 資料庫檢查工具
+│   └── system_performance_test.py # 系統效能測試
+├── docs/                         # 技術文檔
+│   ├── archive/                  # 歷史文檔存檔
+│   ├── QUICKSTART.md            # 快速開始指南
+│   ├── RAG_技術架構文檔.md       # 技術架構說明
+│   └── RAG查詢策略技術文檔.md    # 查詢策略文檔
+├── results/                      # 測試結果和報告
+├── data/                         # 法規資料儲存
+├── config/                       # 設定檔和範例
+├── chroma_db/                   # 向量資料庫
+├── wandb/                       # W&B 監控資料
+├── main.py                      # 生產版主程式（多法規+監控）
+├── main_no_wandb.py            # 簡化版主程式（食品安全法）
+├── ultrathink.py               # 研究版主程式（實驗功能）
+├── requirements.txt            # Python 相依套件
+├── .env.template              # 環境設定範本
+└── README.md                  # 專案說明文檔
 ```
 
 ## 使用範例
@@ -331,17 +382,18 @@ python main.py --help
 ```
 
 詳細的故障排除指南請參考：
-- `QUICK_FIX.md` - 快速修復指南
-- `MONITOR_FIX_FINAL.md` - 監控問題修復
-- `WANDB_MONITORING_GUIDE.md` - W&B 監控完整指南
+- `docs/archive/` - 歷史故障排除文檔
+- `docs/QUICKSTART.md` - 快速開始指南
+- `docs/UV_SETUP_GUIDE.md` - 環境設置指南
 
 ## 📚 文檔資源
 
-- **快速開始**：本 README.md
-- **W&B 監控指南**：`WANDB_MONITORING_GUIDE.md`
-- **技術架構文檔**：`doc/RAG_技術架構文檔.md`
-- **故障排除**：`QUICK_FIX.md`、`MONITOR_FIX_FINAL.md`
-- **測試腳本**：`test_startup.py`、`test_monitor_fix.py`
+- **快速開始**：本 README.md + `docs/QUICKSTART.md`
+- **技術架構**：`docs/RAG_技術架構文檔.md`
+- **查詢策略**：`docs/RAG查詢策略技術文檔.md`
+- **環境設置**：`docs/UV_SETUP_GUIDE.md`
+- **歷史文檔**：`docs/archive/` (故障排除和修復記錄)
+- **測試套件**：`tests/` 目錄下的所有測試檔案
 
 ## 🤝 貢獻
 
