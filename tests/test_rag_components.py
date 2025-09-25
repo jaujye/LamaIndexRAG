@@ -9,7 +9,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.advanced_rag_system import LegalQueryExpander, LegalReranker, QueryContext
+from src.legal_multi_domain_rag import LegalQueryExpander, LegalReranker, QueryContext
 
 def test_legal_query_expansion():
     """Test the legal query expansion functionality"""

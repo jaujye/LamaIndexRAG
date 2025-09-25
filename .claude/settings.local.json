@@ -41,7 +41,9 @@
       "Bash(git commit:*)",
       "Bash(.venv/Scripts/python.exe main.py:*)",
       "Bash(python:*)",
-      "Bash(.venv/Scripts/python.exe:*)"
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(.venv\\Scripts\\python.exe main.py:*)",
+      "Bash(git mv:*)"
     ],
     "deny": [],
     "ask": []

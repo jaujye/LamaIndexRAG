@@ -10,7 +10,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.query_router import QueryRouter, LegalDomainClassifier, KnowledgeBase
-from src.advanced_rag_system import QueryContext, LegalQueryExpander
+from src.legal_multi_domain_rag import QueryContext, LegalQueryExpander
 
 def test_domain_classification():
     """Test the legal domain classification functionality"""

@@ -50,7 +50,7 @@ def test_rag_system_initialization():
     print("🔍 測試 LegalRAGSystem 初始化...")
 
     try:
-        from src.rag_system import LegalRAGSystem
+        from src.legal_single_domain_rag import LegalRAGSystem
 
         print("  - 測試停用監控模式...")
         # 這個測試不能真正初始化，因為需要索引存在
@@ -67,18 +67,18 @@ def test_main_cli_initialization():
     print("🔍 測試主程式 CLI 初始化...")
 
     try:
-        from main import FoodSafetyRAGCLI
+        from main import LegalRAGCLI
 
         print("  - 測試啟用監控模式...")
-        cli1 = FoodSafetyRAGCLI(enable_monitoring=True)
+        cli1 = LegalRAGCLI(enable_monitoring=True)
         print("  ✅ 啟用監控模式初始化成功")
 
         print("  - 測試停用監控模式...")
-        cli2 = FoodSafetyRAGCLI(enable_monitoring=False)
+        cli2 = LegalRAGCLI(enable_monitoring=False)
         print("  ✅ 停用監控模式初始化成功")
 
         print("  - 測試預設參數...")
-        cli3 = FoodSafetyRAGCLI()
+        cli3 = LegalRAGCLI()
         print("  ✅ 預設參數初始化成功")
 
         return True

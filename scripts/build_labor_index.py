@@ -1,7 +1,7 @@
 """
 Build Labor Law ChromaDB index using enhanced processing
 """
-from src.enhanced_document_processor import EnhancedLegalProcessor
+from src.legal_enhanced_processor import EnhancedLegalProcessor
 from src.index_builder import LegalIndexBuilder
 import json
 import os

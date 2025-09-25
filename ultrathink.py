@@ -16,8 +16,8 @@ from datetime import datetime
 
 # Import our core systems
 from src.query_router import QueryRouter, KnowledgeBase
-from src.advanced_rag_system import AdvancedRAGSystem
-from src.enhanced_document_processor import EnhancedLegalProcessor
+from src.legal_multi_domain_rag import AdvancedRAGSystem
+from src.legal_enhanced_processor import EnhancedLegalProcessor
 
 
 class UltraThinkRAG:

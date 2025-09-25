@@ -46,7 +46,7 @@ def test_rag_system_monitor_attribute():
     print("🔍 測試 LegalRAGSystem monitor 屬性...")
 
     try:
-        from src.rag_system import LegalRAGSystem
+        from src.legal_single_domain_rag import LegalRAGSystem
 
         # 這個測試只檢查類別能否正常匯入，不實際初始化
         # 因為需要現有的索引

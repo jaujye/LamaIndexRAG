@@ -111,54 +111,88 @@ python ultrathink.py
 4. 初始化監控（如啟用）
 5. 啟動互動式問答介面
 
-### 4. 查詢模式
+### 4. CLI 指令詳解
 
-#### 單一查詢模式
+#### 查詢模式
 
+**單一法規查詢（預設食品安全法）**：
 ```bash
-# 簡化版
-python main_no_wandb.py -q "食品添加物有什麼限制？"
-
-# 完整版
 python main.py -q "食品添加物有什麼限制？"
 ```
 
-#### 批次查詢模式
-
+**多法規整合查詢（智能路由）**：
 ```bash
-# 簡化版
-python main_no_wandb.py --batch config/query_examples.txt
+python main.py --multi-domain -q "勞工食品安全規定"
+```
 
-# 完整版
+**指定特定法規領域查詢**：
+```bash
+python main.py --domain food -q "食品標示規定"
+python main.py --domain labor -q "工時限制規定"
+```
+
+**批次查詢模式**：
+```bash
+# 單一法規批次查詢
 python main.py --batch config/query_examples.txt
+
+# 多法規批次查詢
+python main.py --multi-domain --batch config/query_examples.txt
 ```
 
-### 5. 系統管理指令
+#### 資料管理指令
 
-重新下載法規資料：
+**下載法規資料**：
 ```bash
-# 任選一種方式
-python main_no_wandb.py --fetch-data
-python main.py --fetch-data
+# 下載食品安全衛生管理法資料
+python main.py --fetch-food-data
+
+# 下載勞動基準法資料
+python main.py --fetch-labor-data
 ```
 
-重建向量索引：
+**重建向量索引**：
 ```bash
-# 任選一種方式
-python main_no_wandb.py --rebuild-index
-python main.py --rebuild-index
+# 重建食品安全法向量索引
+python main.py --rebuild-food-index
+
+# 重建勞基法向量索引
+python main.py --rebuild-labor-index
 ```
 
-顯示索引統計：
+#### 系統管理與監控指令
+
+**顯示索引統計資訊**：
 ```bash
-# 任選一種方式
-python main_no_wandb.py --stats
-python main.py --stats
+# 顯示所有法規索引統計
+python main.py --all-stats
 ```
 
-停用監控功能（完整版）：
+**監控控制**：
 ```bash
+# 停用 W&B 監控功能
 python main.py --no-monitoring
+```
+
+#### 互動式查詢模式
+
+**單一法規互動模式**：
+```bash
+python main.py
+```
+
+**多法規整合互動模式**：
+```bash
+python main.py --multi-domain
+```
+
+#### 向後相容指令（已廢棄但仍支援）
+
+```bash
+# 這些指令會自動轉換為新指令
+python main.py --fetch-data     # 自動轉為 --fetch-food-data
+python main.py --rebuild-index  # 自動轉為 --rebuild-food-index
+python main.py --stats          # 自動轉為 --all-stats
 ```
 
 ## 系統架構

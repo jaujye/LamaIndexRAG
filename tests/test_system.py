@@ -57,7 +57,7 @@ def test_data_fetcher():
     console.print("\n[bold blue] 測試資料擷取功能[/bold blue]")
 
     try:
-        from src.data_fetcher import FoodSafetyActFetcher
+        from src.legal_food_safety_fetcher import FoodSafetyActFetcher
 
         fetcher = FoodSafetyActFetcher(delay=0.5)
 
@@ -103,7 +103,7 @@ def test_document_processor():
     console.print("\n[bold blue] 測試文件處理功能[/bold blue]")
 
     try:
-        from src.document_processor import LegalDocumentProcessor
+        from src.legal_basic_processor import LegalDocumentProcessor
 
         processor = LegalDocumentProcessor(chunk_size=256, chunk_overlap=25)
 
@@ -193,7 +193,7 @@ def test_rag_system():
         return False
 
     try:
-        from src.rag_system import LegalRAGSystem
+        from src.legal_single_domain_rag import LegalRAGSystem
 
         # 嘗試初始化 RAG 系統
         console.print("初始化 RAG 系統...")

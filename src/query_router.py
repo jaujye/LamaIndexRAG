@@ -12,7 +12,7 @@ from collections import defaultdict
 import logging
 
 # Import our advanced RAG system
-from .advanced_rag_system import AdvancedRAGSystem, QueryContext, LegalQueryExpander
+from .legal_multi_domain_rag import AdvancedRAGSystem, QueryContext, LegalQueryExpander
 
 
 class KnowledgeBase(Enum):
@@ -82,10 +82,37 @@ class LegalDomainClassifier:
             'obligations': None  # Route based on content
         }
 
+        # Conversational patterns that should not trigger legal search
+        self.conversational_patterns = [
+            # Greetings
+            r'^(你好|嗨|哈囉|Hello|Hi)(?:[！!。.]?)$',
+            # Simple thanks
+            r'^(謝謝|感謝|Thanks?|Thank you)(?:[！!。.]?)$',
+            # Simple responses
+            r'^(好的?|OK|是的?|沒問題)(?:[！!。.]?)$',
+            # General questions without legal context
+            r'^(怎麼樣|如何|什麼|幹嘛|做什麼)(?:\？?|\??)$',
+            # Casual conversation starters
+            r'^(最近|今天|現在)(?:怎麼樣|好嗎)(?:\？?|\??)$'
+        ]
+
     def classify_query(self, query: str, query_context: QueryContext) -> RouteDecision:
         """Classify query and determine routing strategy"""
 
-        # Check for cross-domain patterns first
+        # Check for conversational patterns first - these should not trigger legal search
+        query_trimmed = query.strip()
+        for pattern in self.conversational_patterns:
+            if re.match(pattern, query_trimmed, re.IGNORECASE):
+                return RouteDecision(
+                    primary_kb=None,  # No knowledge base search needed
+                    secondary_kbs=[],
+                    confidence_score=0.95,
+                    reasoning="Conversational query detected - no legal search needed",
+                    query_context=query_context,
+                    requires_fusion=False
+                )
+
+        # Check for cross-domain patterns
         for pattern in self.cross_domain_patterns:
             if re.match(pattern, query):
                 return RouteDecision(
@@ -331,6 +358,20 @@ class QueryRouter:
 
             # Classify and route
             route_decision = self.classifier.classify_query(query, query_context)
+
+            # Handle conversational queries (no legal search needed)
+            if route_decision.primary_kb is None:
+                return QueryResponse(
+                    query=query,
+                    route_decision=route_decision,
+                    responses={},
+                    fused_response="你好！有什麼法規問題需要我幫忙解答嗎？我可以協助查詢勞基法、食品安全法等相關法規資訊。",
+                    metadata={
+                        "query_type": "conversational",
+                        "processing_time": 0,
+                        "kb_searched": []
+                    }
+                )
 
             # Track routing statistics
             self.query_stats[route_decision.primary_kb.value] += 1

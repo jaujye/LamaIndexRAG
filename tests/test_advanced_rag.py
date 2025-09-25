@@ -10,7 +10,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
-from src.advanced_rag_system import AdvancedRAGSystem, LegalQueryExpander
+from src.legal_multi_domain_rag import AdvancedRAGSystem, LegalQueryExpander
 import json
 
 def test_query_expansion():

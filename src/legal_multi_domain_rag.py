@@ -433,12 +433,13 @@ class AdvancedRAGSystem:
             if not api_key:
                 raise ValueError("OpenAI API key not found")
 
+            embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
             embed_model = OpenAIEmbedding(
                 api_key=api_key,
-                model="text-embedding-3-small"  # 1536 dimensions to match collections
+                model=embedding_model  # 1536 dimensions to match collections
             )
             Settings.embed_model = embed_model
-            print("[OK] Using OpenAI text-embedding-3-small (1536 dims)")
+            print(f"[OK] Using OpenAI {embedding_model} (1536 dims)")
         except Exception as e:
             print(f"[WARN] OpenAI embedding configuration failed: {e}")
             # Fallback to ONNX if available (but dimensions won't match existing collections)

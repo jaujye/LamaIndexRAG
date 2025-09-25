@@ -21,10 +21,10 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.text import Text
 from rich import print as rprint
 
-from src.data_fetcher import FoodSafetyActFetcher
-from src.document_processor import LegalDocumentProcessor
+from src.legal_food_safety_fetcher import FoodSafetyActFetcher
+from src.legal_basic_processor import LegalDocumentProcessor
 from src.index_builder import LegalIndexBuilder
-from src.rag_system import LegalRAGSystem
+from src.legal_single_domain_rag import LegalRAGSystem
 
 
 class FoodSafetyRAGCLI:

@@ -61,7 +61,7 @@ class SimpleGraph:
 from llama_index.core import Document
 from llama_index.core.schema import TextNode
 
-from .document_processor import LegalDocumentProcessor, LegalChunk
+from .legal_basic_processor import LegalDocumentProcessor, LegalChunk
 
 
 @dataclass

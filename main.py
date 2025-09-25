@@ -55,14 +55,14 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.text import Text
 from rich import print as rprint
 
-from src.data_fetcher import FoodSafetyActFetcher
+from src.legal_food_safety_fetcher import FoodSafetyActFetcher
 from src.labor_law_fetcher import LaborLawFetcher
-from src.document_processor import LegalDocumentProcessor
-from src.enhanced_document_processor import EnhancedLegalProcessor
+from src.legal_basic_processor import LegalDocumentProcessor
+from src.legal_enhanced_processor import EnhancedLegalProcessor
 from src.index_builder import LegalIndexBuilder
-from src.rag_system import LegalRAGSystem
+from src.legal_single_domain_rag import LegalRAGSystem
 from src.query_router import QueryRouter
-from src.advanced_rag_system import AdvancedRAGSystem
+from src.legal_multi_domain_rag import AdvancedRAGSystem
 from src.monitoring import WandbMonitor, initialize_global_monitor, create_config_from_env
 
 
@@ -638,7 +638,7 @@ class LegalRAGCLI:
                         "interactive_mode": True,
                         "multi_domain_mode": True,
                         "query_response_time": query_time,
-                        "primary_kb": response.route_decision.primary_kb.value,
+                        "primary_kb": response.route_decision.primary_kb.value if response.route_decision.primary_kb else "conversational",
                         "routing_confidence": response.route_decision.confidence_score
                     })
 
@@ -706,7 +706,8 @@ class LegalRAGCLI:
     def display_multi_domain_result(self, response):
         """顯示多法規查詢結果"""
         # 路由資訊
-        self.console.print(f"\n[dim]🧠 查詢路由: {response.route_decision.primary_kb.value} " +
+        kb_name = response.route_decision.primary_kb.value if response.route_decision.primary_kb else "conversational"
+        self.console.print(f"\n[dim]🧠 查詢路由: {kb_name} " +
                           f"(信心度: {response.route_decision.confidence_score:.2f})[/dim]")
         if response.route_decision.secondary_kbs:
             secondary = ", ".join([kb.value for kb in response.route_decision.secondary_kbs])
@@ -724,26 +725,54 @@ class LegalRAGCLI:
 
         # 顯示各法規的查詢結果摘要
         if len(response.responses) > 1:
-            self.console.print("\n[bold cyan]📈 各法規查詢結果:[/bold cyan]")
-
-            results_table = Table()
-            results_table.add_column("法規", style="cyan")
-            results_table.add_column("相關文檔數", style="yellow")
-            results_table.add_column("答案預覽", style="white")
+            # 檢查是否有任何有意義的結果
+            meaningful_results = []
+            total_docs = 0
 
             for kb_name, kb_response in response.responses.items():
                 if "error" not in kb_response:
                     law_name = "勞基法" if kb_name == "labor_law" else "食品安全法"
                     doc_count = len(kb_response.get('metadata', {}).get('retrieved_nodes', []))
-                    answer_preview = kb_response.get('response', '')[:100] + "..." if len(kb_response.get('response', '')) > 100 else kb_response.get('response', '')
+                    answer_preview = kb_response.get('response', '')
 
-                    results_table.add_row(
-                        law_name,
-                        str(doc_count),
-                        answer_preview
+                    total_docs += doc_count
+
+                    # 檢查回答是否有意義（不是通用的"找不到"訊息）
+                    is_meaningful = (
+                        doc_count > 0 and
+                        answer_preview and
+                        not answer_preview.startswith("I'm sorry, but based on the provided context") and
+                        not answer_preview.startswith("很抱歉，根據提供的") and
+                        len(answer_preview.strip()) > 20
                     )
 
-            self.console.print(results_table)
+                    if is_meaningful:
+                        meaningful_results.append({
+                            'name': law_name,
+                            'count': doc_count,
+                            'preview': answer_preview[:100] + "..." if len(answer_preview) > 100 else answer_preview
+                        })
+
+            # 只有當有意義的結果時才顯示表格
+            if meaningful_results:
+                self.console.print("\n[bold cyan]📈 各法規查詢結果:[/bold cyan]")
+
+                results_table = Table()
+                results_table.add_column("法規", style="cyan")
+                results_table.add_column("相關文檔數", style="yellow")
+                results_table.add_column("答案預覽", style="white")
+
+                for result in meaningful_results:
+                    results_table.add_row(
+                        result['name'],
+                        str(result['count']),
+                        result['preview']
+                    )
+
+                self.console.print(results_table)
+            elif total_docs == 0:
+                # 完全沒有找到相關文檔時顯示中文訊息
+                self.console.print("\n[yellow]📋 查詢結果: 查詢不到任何相關法規結果[/yellow]")
 
     def batch_query_mode(self, questions_file: str):
         """批次查詢模式"""
@@ -909,7 +938,7 @@ class LegalRAGCLI:
                     self.monitor.create_summary({
                         "session_type": "multi_domain_single_query",
                         "query_text": args.query[:100] + "..." if len(args.query) > 100 else args.query,
-                        "primary_kb": response.route_decision.primary_kb.value,
+                        "primary_kb": response.route_decision.primary_kb.value if response.route_decision.primary_kb else "conversational",
                         "routing_confidence": response.route_decision.confidence_score
                     })
             else:
@@ -967,7 +996,7 @@ class LegalRAGCLI:
         for response in results:
             output_data.append({
                 "question": response.query,
-                "primary_kb": response.route_decision.primary_kb.value,
+                "primary_kb": response.route_decision.primary_kb.value if response.route_decision.primary_kb else "conversational",
                 "confidence_score": response.route_decision.confidence_score,
                 "reasoning": response.route_decision.reasoning,
                 "fused_response": response.fused_response,

@@ -20,16 +20,16 @@ def test_imports():
         from src.monitoring import WandbMonitor, RAGMetrics
         print("✅ 監控模組匯入成功")
 
-        from src.data_fetcher import FoodSafetyActFetcher
+        from src.legal_food_safety_fetcher import FoodSafetyActFetcher
         print("✅ 資料獲取模組匯入成功")
 
-        from src.document_processor import LegalDocumentProcessor
+        from src.legal_basic_processor import LegalDocumentProcessor
         print("✅ 文件處理模組匯入成功")
 
         from src.index_builder import LegalIndexBuilder
         print("✅ 索引建立模組匯入成功")
 
-        from src.rag_system import LegalRAGSystem
+        from src.legal_single_domain_rag import LegalRAGSystem
         print("✅ RAG 系統模組匯入成功")
 
         return True
@@ -43,18 +43,18 @@ def test_cli_initialization():
     print("\n🔍 測試 CLI 初始化...")
 
     try:
-        from main import FoodSafetyRAGCLI
+        from main import LegalRAGCLI
 
         # 測試啟用監控模式
-        cli_with_monitoring = FoodSafetyRAGCLI(enable_monitoring=True)
+        cli_with_monitoring = LegalRAGCLI(enable_monitoring=True)
         print("✅ CLI 啟用監控模式初始化成功")
 
         # 測試停用監控模式
-        cli_without_monitoring = FoodSafetyRAGCLI(enable_monitoring=False)
+        cli_without_monitoring = LegalRAGCLI(enable_monitoring=False)
         print("✅ CLI 停用監控模式初始化成功")
 
         # 測試預設參數
-        cli_default = FoodSafetyRAGCLI()
+        cli_default = LegalRAGCLI()
         print("✅ CLI 預設參數初始化成功")
 
         return True
@@ -68,12 +68,12 @@ def test_monitoring_setup():
     print("\n🔍 測試監控設置...")
 
     try:
-        from main import FoodSafetyRAGCLI
+        from main import LegalRAGCLI
 
         # 設置測試環境變數（停用模式）
         os.environ["WANDB_MODE"] = "disabled"
 
-        cli = FoodSafetyRAGCLI(enable_monitoring=True)
+        cli = LegalRAGCLI(enable_monitoring=True)
         cli.setup_monitoring()
 
         print("✅ 監控設置完成")

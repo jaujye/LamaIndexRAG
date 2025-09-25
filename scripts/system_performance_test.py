@@ -10,8 +10,8 @@ from datetime import datetime
 import statistics
 
 from src.query_router import QueryRouter, LegalDomainClassifier, KnowledgeBase
-from src.advanced_rag_system import LegalQueryExpander, AdvancedRAGSystem
-from src.enhanced_document_processor import EnhancedLegalProcessor
+from src.legal_multi_domain_rag import LegalQueryExpander, AdvancedRAGSystem
+from src.legal_enhanced_processor import EnhancedLegalProcessor
 
 
 class SystemPerformanceTester:
