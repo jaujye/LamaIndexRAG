@@ -1,0 +1,24 @@
+# Core LlamaIndex and RAG components
+llama-index>=0.10.11,<0.11.0
+llama-index-embeddings-openai>=0.1.7,<0.2.0
+llama-index-llms-openai>=0.1.13,<0.2.0
+llama-index-vector-stores-chroma>=0.1.4,<0.2.0
+
+# Environment and configuration
+python-dotenv>=1.0.0,<2.0.0
+
+# Web scraping and data processing
+beautifulsoup4>=4.12.3,<5.0.0
+requests>=2.31.0,<3.0.0
+pandas>=2.0.3,<3.0.0
+numpy>=1.24.3,<2.0.0
+
+# Vector database
+chromadb>=0.4.24,<0.5.0
+
+# Text processing
+tiktoken>=0.5.2,<1.0.0
+
+# Development and utilities
+rich>=13.7.0,<14.0.0
+tqdm>=4.66.1,<5.0.0
