@@ -4,6 +4,7 @@ Handles queries and generates responses using indexed legal knowledge
 """
 
 import os
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from dotenv import load_dotenv
@@ -18,6 +19,7 @@ from llama_index.core.prompts.base import PromptTemplate
 from llama_index.llms.openai import OpenAI
 
 from .index_builder import LegalIndexBuilder
+from .monitoring import WandbMonitor, RAGMetrics, get_memory_usage, monitor_execution_time
 
 
 @dataclass
@@ -31,13 +33,15 @@ class QueryResult:
 
 
 class LegalRAGSystem:
-    """RAG system for legal document queries"""
+    """RAG system for legal document queries with W&B monitoring"""
 
     def __init__(self,
                  api_key: Optional[str] = None,
                  chroma_path: str = None,
                  collection_name: str = "food_safety_act",
-                 temperature: float = 0.1):
+                 temperature: float = 0.1,
+                 enable_monitoring: bool = True,
+                 monitor: Optional[WandbMonitor] = None):
         """
         Initialize the RAG system
 
@@ -58,11 +62,23 @@ class LegalRAGSystem:
         self.collection_name = collection_name
         self.temperature = temperature
 
+        # Initialize monitoring FIRST
+        self.enable_monitoring = enable_monitoring
+        self.monitor = monitor
+        if self.enable_monitoring and not self.monitor:
+            # Create a default monitor if none provided
+            self.monitor = WandbMonitor(mode="disabled")  # Will check env for actual mode
+
+        self.query_count = 0
+        self.total_queries_time = 0.0
+
         # Initialize components
         self.index_builder = LegalIndexBuilder(
             api_key=self.api_key,
             chroma_path=chroma_path,
-            collection_name=collection_name
+            collection_name=collection_name,
+            enable_monitoring=self.enable_monitoring,
+            monitor=self.monitor
         )
 
         self.index: Optional[VectorStoreIndex] = None
@@ -73,11 +89,23 @@ class LegalRAGSystem:
 
     def _load_index(self):
         """Load the vector index"""
+        start_time = time.time()
+
         self.index = self.index_builder.load_existing_index()
         if not self.index:
             raise ValueError(
                 "No index found. Please build an index first using index_builder.py"
             )
+
+        load_time = time.time() - start_time
+
+        # Log index loading metrics
+        if self.monitor:
+            self.monitor.log_metrics({
+                "index_load_time": load_time,
+                "index_loaded_successfully": True,
+                "memory_usage_after_load": get_memory_usage()
+            })
 
         print("RAG system initialized with existing index")
 
@@ -217,13 +245,14 @@ class LegalRAGSystem:
 
         return sources
 
+    @monitor_execution_time("query_total_time")
     def query(self,
               question: str,
               similarity_top_k: int = 5,
               similarity_cutoff: float = 0.7,
               enhance_query: bool = True) -> QueryResult:
         """
-        Query the legal knowledge base
+        Query the legal knowledge base with monitoring
 
         Args:
             question: User's question
@@ -234,58 +263,144 @@ class LegalRAGSystem:
         Returns:
             QueryResult with answer and source information
         """
-        if not self.query_engine:
-            self.setup_query_engine(similarity_top_k, similarity_cutoff)
+        start_time = time.time()
+        self.query_count += 1
 
-        # Classify and enhance query
-        query_type = self.classify_query_type(question)
-        enhanced_question = self.enhance_query(question, query_type) if enhance_query else question
+        try:
+            if not self.query_engine:
+                self.setup_query_engine(similarity_top_k, similarity_cutoff)
 
-        print(f"Query type: {query_type}")
-        if enhance_query and enhanced_question != question:
-            print(f"Enhanced query: {enhanced_question}")
+            # Classify and enhance query
+            classify_start = time.time()
+            query_type = self.classify_query_type(question)
+            enhanced_question = self.enhance_query(question, query_type) if enhance_query else question
+            classify_time = time.time() - classify_start
 
-        # Execute query
-        response = self.query_engine.query(enhanced_question)
+            print(f"Query type: {query_type}")
+            if enhance_query and enhanced_question != question:
+                print(f"Enhanced query: {enhanced_question}")
 
-        # Process sources
-        sources = []
-        for node_with_score in response.source_nodes:
-            source_info = {
-                'article_number': node_with_score.node.metadata.get('article_number', 'Unknown'),
-                'article_title': node_with_score.node.metadata.get('article_title', ''),
-                'chapter': node_with_score.node.metadata.get('chapter', ''),
-                'chunk_type': node_with_score.node.metadata.get('chunk_type', ''),
-                'similarity_score': float(node_with_score.score) if node_with_score.score else 0.0,
-                'text_preview': node_with_score.node.text[:200] + "..." if len(node_with_score.node.text) > 200 else node_with_score.node.text,
-                'source_url': node_with_score.node.metadata.get('source_url', '')
-            }
-            sources.append(source_info)
+            # Execute query with timing
+            llm_start = time.time()
+            response = self.query_engine.query(enhanced_question)
+            llm_time = time.time() - llm_start
 
-        # Apply custom relevance scoring
-        sources = self.calculate_relevance_score(enhanced_question, sources)
+            # Process sources
+            process_start = time.time()
+            sources = []
+            similarity_scores = []
 
-        # Calculate average confidence score using relevance scores
-        total_relevance = sum(source.get('relevance_score', source['similarity_score']) for source in sources)
-        confidence_score = total_relevance / len(sources) if sources else 0.0
+            for node_with_score in response.source_nodes:
+                similarity_score = float(node_with_score.score) if node_with_score.score else 0.0
+                similarity_scores.append(similarity_score)
 
-        return QueryResult(
-            question=question,
-            answer=str(response),
-            sources=sources,
-            confidence_score=confidence_score,
-            query_type=query_type
-        )
+                source_info = {
+                    'article_number': node_with_score.node.metadata.get('article_number', 'Unknown'),
+                    'article_title': node_with_score.node.metadata.get('article_title', ''),
+                    'chapter': node_with_score.node.metadata.get('chapter', ''),
+                    'chunk_type': node_with_score.node.metadata.get('chunk_type', ''),
+                    'similarity_score': similarity_score,
+                    'text_preview': node_with_score.node.text[:200] + "..." if len(node_with_score.node.text) > 200 else node_with_score.node.text,
+                    'source_url': node_with_score.node.metadata.get('source_url', '')
+                }
+                sources.append(source_info)
+
+            # Apply custom relevance scoring
+            sources = self.calculate_relevance_score(enhanced_question, sources)
+            process_time = time.time() - process_start
+
+            # Calculate average confidence score using relevance scores
+            total_relevance = sum(source.get('relevance_score', source['similarity_score']) for source in sources)
+            confidence_score = total_relevance / len(sources) if sources else 0.0
+
+            # Calculate total time
+            total_time = time.time() - start_time
+            self.total_queries_time += total_time
+
+            # Create result
+            result = QueryResult(
+                question=question,
+                answer=str(response),
+                sources=sources,
+                confidence_score=confidence_score,
+                query_type=query_type
+            )
+
+            # Log metrics to W&B
+            if self.monitor:
+                # Estimate token usage (rough approximation)
+                estimated_tokens = len(question.split()) + len(str(response).split()) * 2
+
+                metrics = RAGMetrics(
+                    query_text=question[:100] + "..." if len(question) > 100 else question,
+                    query_type=query_type,
+                    query_enhanced=enhance_query and enhanced_question != question,
+                    total_time=total_time,
+                    retrieval_time=classify_time + process_time,
+                    llm_time=llm_time,
+                    documents_retrieved=len(sources),
+                    similarity_scores=similarity_scores,
+                    response_length=len(str(response)),
+                    confidence_score=confidence_score,
+                    tokens_used=estimated_tokens,
+                    memory_usage_mb=get_memory_usage()
+                )
+
+                self.monitor.log_metrics(metrics)
+                self.monitor.log_query_result(question, str(response), sources, metrics)
+
+                # Log cumulative statistics
+                self.monitor.log_metrics({
+                    "total_queries": self.query_count,
+                    "avg_query_time": self.total_queries_time / self.query_count,
+                    "cumulative_query_time": self.total_queries_time
+                })
+
+            return result
+
+        except Exception as e:
+            total_time = time.time() - start_time
+
+            # Log error to monitoring
+            if self.monitor:
+                self.monitor.log_error(
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    context={
+                        "query_text": question[:100] + "..." if len(question) > 100 else question,
+                        "query_type": query_type if 'query_type' in locals() else "unknown",
+                        "execution_time": total_time,
+                        "query_count": self.query_count
+                    }
+                )
+
+            raise  # Re-raise the exception
 
     def batch_query(self, questions: List[str]) -> List[QueryResult]:
-        """Process multiple questions in batch"""
+        """Process multiple questions in batch with monitoring"""
+        batch_start = time.time()
         results = []
-        for question in questions:
+        successful_queries = 0
+        failed_queries = 0
+
+        for i, question in enumerate(questions):
             try:
                 result = self.query(question)
                 results.append(result)
+                successful_queries += 1
+
+                # Log batch progress
+                if self.monitor and (i + 1) % 10 == 0:  # Log every 10 queries
+                    self.monitor.log_metrics({
+                        "batch_progress": (i + 1) / len(questions),
+                        "batch_successful": successful_queries,
+                        "batch_failed": failed_queries
+                    })
+
             except Exception as e:
+                failed_queries += 1
                 print(f"Error processing question '{question}': {e}")
+
                 # Create error result
                 error_result = QueryResult(
                     question=question,
@@ -295,6 +410,20 @@ class LegalRAGSystem:
                     query_type="error"
                 )
                 results.append(error_result)
+
+        batch_time = time.time() - batch_start
+
+        # Log batch summary
+        if self.monitor:
+            self.monitor.log_metrics({
+                "batch_total_time": batch_time,
+                "batch_total_questions": len(questions),
+                "batch_successful_queries": successful_queries,
+                "batch_failed_queries": failed_queries,
+                "batch_success_rate": successful_queries / len(questions) if questions else 0,
+                "batch_avg_time_per_query": batch_time / len(questions) if questions else 0
+            })
+
         return results
 
     def get_related_articles(self, article_number: str) -> List[Dict[str, Any]]:
@@ -321,15 +450,24 @@ class LegalRAGSystem:
         return results
 
     def get_system_stats(self) -> Dict[str, Any]:
-        """Get system statistics"""
+        """Get system statistics with monitoring data"""
         index_stats = self.index_builder.get_index_stats()
 
         system_stats = {
             "rag_system_status": "active",
             "query_engine_configured": self.query_engine is not None,
             "temperature": self.temperature,
+            "monitoring_enabled": self.enable_monitoring and self.monitor is not None,
+            "total_queries": self.query_count,
+            "avg_query_time": self.total_queries_time / self.query_count if self.query_count > 0 else 0.0,
+            "cumulative_query_time": self.total_queries_time,
+            "current_memory_usage": get_memory_usage(),
             "index_stats": index_stats
         }
+
+        # Log system stats if monitoring is enabled
+        if self.monitor:
+            self.monitor.log_system_stats(system_stats)
 
         return system_stats
 

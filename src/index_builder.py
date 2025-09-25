@@ -5,6 +5,7 @@ Creates and manages LlamaIndex indices with ChromaDB storage
 
 import os
 import json
+import time
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import chromadb
@@ -20,16 +21,19 @@ from llama_index.core import Document
 from llama_index.core.schema import TextNode
 
 from .document_processor import LegalDocumentProcessor, LegalChunk
+from .monitoring import WandbMonitor, RAGMetrics, get_memory_usage, monitor_execution_time
 
 
 class LegalIndexBuilder:
-    """Builds and manages vector indices for legal documents"""
+    """Builds and manages vector indices for legal documents with monitoring"""
 
     def __init__(self,
                  api_key: Optional[str] = None,
                  chroma_path: str = None,
                  collection_name: str = "food_safety_act",
-                 embedding_model: str = "text-embedding-3-small"):
+                 embedding_model: str = "text-embedding-3-small",
+                 enable_monitoring: bool = True,
+                 monitor: Optional[WandbMonitor] = None):
         """
         Initialize the index builder
 
@@ -57,6 +61,12 @@ class LegalIndexBuilder:
             self.chroma_path = None  # Not needed for remote connections
         self.collection_name = collection_name
         self.embedding_model = embedding_model
+
+        # Initialize monitoring FIRST (before other methods that use decorators)
+        self.enable_monitoring = enable_monitoring
+        self.monitor = monitor
+        if self.enable_monitoring and not self.monitor:
+            self.monitor = WandbMonitor(mode="disabled")  # Will check env for actual mode
 
         # Initialize components
         self._setup_llama_settings()
@@ -91,16 +101,19 @@ class LegalIndexBuilder:
             temperature=0.1
         )
 
+    @monitor_execution_time("chroma_setup_time")
     def _setup_chroma_client(self):
-        """Initialize ChromaDB client"""
-        if self.is_remote:
-            # Remote ChromaDB connection
-            host = self._parse_host_from_url(self.chroma_path_str)
-            port = self._parse_port_from_url(self.chroma_path_str)
+        """Initialize ChromaDB client with monitoring"""
+        setup_start = time.time()
 
-            print(f"Connecting to remote ChromaDB at: {host}:{port}")
+        try:
+            if self.is_remote:
+                # Remote ChromaDB connection
+                host = self._parse_host_from_url(self.chroma_path_str)
+                port = self._parse_port_from_url(self.chroma_path_str)
 
-            try:
+                print(f"Connecting to remote ChromaDB at: {host}:{port}")
+
                 # First, test basic connectivity
                 import requests
                 heartbeat_response = requests.get(f"http://{host}:{port}/api/v2/heartbeat", timeout=10)
@@ -144,29 +157,70 @@ class LegalIndexBuilder:
                         print("[OK] Connected without tenant specification")
                     except Exception as no_tenant_error:
                         print(f"[WARN] No-tenant approach failed: {no_tenant_error}")
-                        raise no_tenant_error
+
+                # Approach 3: Simple HttpClient (most basic)
+                if not client_created:
+                    try:
+                        self.chroma_client = chromadb.HttpClient(
+                            host=host,
+                            port=port
+                        )
+                        client_created = True
+                        print("[OK] Connected with basic HttpClient")
+                    except Exception as basic_error:
+                        print(f"[ERROR] Basic HttpClient failed: {basic_error}")
+                        raise basic_error
 
                 print("[OK] ChromaDB HttpClient created successfully")
 
-            except Exception as e:
+            else:
+                # Local ChromaDB connection
+                self.chroma_path.mkdir(parents=True, exist_ok=True)
+                self.chroma_client = chromadb.PersistentClient(
+                    path=str(self.chroma_path),
+                    settings=Settings(
+                        anonymized_telemetry=False,
+                        allow_reset=True
+                    )
+                )
+                print(f"[OK] Using local ChromaDB at: {self.chroma_path}")
+
+            setup_time = time.time() - setup_start
+
+            # Log setup metrics
+            if self.monitor:
+                self.monitor.log_metrics({
+                    "chroma_setup_time": setup_time,
+                    "chroma_connection_type": "remote" if self.is_remote else "local",
+                    "chroma_setup_successful": True,
+                    "memory_usage_after_setup": get_memory_usage()
+                })
+
+        except Exception as e:
+            setup_time = time.time() - setup_start
+
+            # Log setup failure
+            if self.monitor:
+                self.monitor.log_error(
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    context={
+                        "chroma_setup_time": setup_time,
+                        "chroma_connection_type": "remote" if self.is_remote else "local",
+                        "chroma_setup_successful": False
+                    }
+                )
+
+            # If remote connection failed, fallback to local
+            if self.is_remote:
                 print(f"[ERROR] Failed to connect to remote ChromaDB: {e}")
-                # Fallback to local mode
                 print("[WARN] Falling back to local ChromaDB mode...")
                 self.is_remote = False
                 self.chroma_path_str = "./chroma_db"
                 self.chroma_path = Path(self.chroma_path_str)
-
-        if not self.is_remote:
-            # Local ChromaDB connection
-            self.chroma_path.mkdir(parents=True, exist_ok=True)
-            self.chroma_client = chromadb.PersistentClient(
-                path=str(self.chroma_path),
-                settings=Settings(
-                    anonymized_telemetry=False,
-                    allow_reset=True
-                )
-            )
-            print(f"[OK] Using local ChromaDB at: {self.chroma_path}")
+                self._setup_chroma_client()  # Retry with local setup
+            else:
+                raise
 
     def create_collection(self, reset: bool = False) -> chromadb.Collection:
         """Create or get ChromaDB collection"""
@@ -188,9 +242,10 @@ class LegalIndexBuilder:
 
         return collection
 
+    @monitor_execution_time("index_build_total_time")
     def build_index_from_json(self, json_path: str, reset: bool = False) -> VectorStoreIndex:
         """
-        Build vector index from processed legal JSON data
+        Build vector index from processed legal JSON data with monitoring
 
         Args:
             json_path: Path to the JSON file with legal data
@@ -199,37 +254,99 @@ class LegalIndexBuilder:
         Returns:
             VectorStoreIndex ready for querying
         """
+        build_start = time.time()
         print(f"Loading legal data from {json_path}...")
 
-        # Load and process documents
-        data = self.processor.load_legal_data(json_path)
-        chunks = self.processor.process_all_articles(data)
+        try:
+            # Load and process documents
+            load_start = time.time()
+            data = self.processor.load_legal_data(json_path)
+            chunks = self.processor.process_all_articles(data)
+            process_time = time.time() - load_start
 
-        print(f"Processed {len(chunks)} chunks from {len(data['articles'])} articles")
+            print(f"Processed {len(chunks)} chunks from {len(data['articles'])} articles")
 
-        # Convert to LlamaIndex documents
-        documents = self.processor.convert_to_llama_documents(chunks)
+            # Convert to LlamaIndex documents
+            convert_start = time.time()
+            documents = self.processor.convert_to_llama_documents(chunks)
+            convert_time = time.time() - convert_start
 
-        # Create ChromaDB collection
-        collection = self.create_collection(reset=reset)
+            # Create ChromaDB collection
+            collection_start = time.time()
+            collection = self.create_collection(reset=reset)
+            collection_time = time.time() - collection_start
 
-        # Setup vector store
-        self.vector_store = ChromaVectorStore(chroma_collection=collection)
-        storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
+            # Setup vector store
+            self.vector_store = ChromaVectorStore(chroma_collection=collection)
+            storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
 
-        # Build index
-        print("Building vector index...")
-        self.index = VectorStoreIndex.from_documents(
-            documents,
-            storage_context=storage_context,
-            show_progress=True
-        )
+            # Build index
+            print("Building vector index...")
+            index_start = time.time()
+            self.index = VectorStoreIndex.from_documents(
+                documents,
+                storage_context=storage_context,
+                show_progress=True
+            )
+            index_time = time.time() - index_start
 
-        # Save index metadata
-        self._save_index_metadata(data, chunks)
+            # Save index metadata
+            metadata_start = time.time()
+            self._save_index_metadata(data, chunks)
+            metadata_time = time.time() - metadata_start
 
-        print(f"Successfully built index with {len(documents)} documents")
-        return self.index
+            total_time = time.time() - build_start
+
+            print(f"Successfully built index with {len(documents)} documents")
+
+            # Log comprehensive metrics
+            if self.monitor:
+                # Calculate average chunk size
+                avg_chunk_size = sum(len(chunk.text) for chunk in chunks) / len(chunks) if chunks else 0
+
+                metrics = RAGMetrics(
+                    documents_processed=len(data['articles']),
+                    chunks_created=len(chunks),
+                    embedding_dimensions=1536,  # text-embedding-3-small dimensions
+                    index_build_time=total_time
+                )
+
+                detailed_metrics = {
+                    "data_loading_time": process_time,
+                    "document_conversion_time": convert_time,
+                    "collection_creation_time": collection_time,
+                    "index_building_time": index_time,
+                    "metadata_save_time": metadata_time,
+                    "total_articles": len(data['articles']),
+                    "total_chunks": len(chunks),
+                    "total_documents": len(documents),
+                    "avg_chunk_size_chars": avg_chunk_size,
+                    "reset_collection": reset,
+                    "embedding_model": self.embedding_model,
+                    "memory_usage_after_build": get_memory_usage()
+                }
+
+                self.monitor.log_metrics(metrics)
+                self.monitor.log_metrics(detailed_metrics)
+
+            return self.index
+
+        except Exception as e:
+            total_time = time.time() - build_start
+
+            if self.monitor:
+                self.monitor.log_error(
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    context={
+                        "index_build_time": total_time,
+                        "json_path": json_path,
+                        "reset": reset,
+                        "build_stage": "index_building"
+                    }
+                )
+
+            raise
 
     def build_index_from_chunks(self, chunks: List[LegalChunk], reset: bool = False) -> VectorStoreIndex:
         """
@@ -265,17 +382,29 @@ class LegalIndexBuilder:
         print(f"Successfully built index with {len(documents)} documents")
         return self.index
 
+    @monitor_execution_time("index_load_time")
     def load_existing_index(self) -> Optional[VectorStoreIndex]:
-        """Load existing index from ChromaDB"""
+        """Load existing index from ChromaDB with monitoring"""
+        load_start = time.time()
+
         try:
             collection = self.chroma_client.get_collection(name=self.collection_name)
 
             # Check if collection has data
-            if collection.count() == 0:
+            document_count = collection.count()
+            if document_count == 0:
                 print("Collection exists but is empty")
+
+                if self.monitor:
+                    self.monitor.log_metrics({
+                        "index_load_successful": False,
+                        "index_load_reason": "empty_collection",
+                        "collection_document_count": 0
+                    })
+
                 return None
 
-            print(f"Loading existing collection with {collection.count()} documents")
+            print(f"Loading existing collection with {document_count} documents")
 
             # Setup vector store and load index
             self.vector_store = ChromaVectorStore(chroma_collection=collection)
@@ -286,11 +415,49 @@ class LegalIndexBuilder:
                 storage_context=storage_context
             )
 
+            load_time = time.time() - load_start
+
+            # Log successful load metrics
+            if self.monitor:
+                self.monitor.log_metrics({
+                    "index_load_time": load_time,
+                    "index_load_successful": True,
+                    "collection_document_count": document_count,
+                    "collection_name": self.collection_name,
+                    "memory_usage_after_load": get_memory_usage()
+                })
+
             return self.index
 
         except ValueError as e:
+            load_time = time.time() - load_start
             print(f"Collection not found: {e}")
+
+            if self.monitor:
+                self.monitor.log_metrics({
+                    "index_load_time": load_time,
+                    "index_load_successful": False,
+                    "index_load_reason": "collection_not_found",
+                    "collection_name": self.collection_name
+                })
+
             return None
+
+        except Exception as e:
+            load_time = time.time() - load_start
+
+            if self.monitor:
+                self.monitor.log_error(
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    context={
+                        "index_load_time": load_time,
+                        "collection_name": self.collection_name,
+                        "operation": "load_existing_index"
+                    }
+                )
+
+            raise
 
     def _save_index_metadata(self, data: Dict[str, Any], chunks: List[LegalChunk]):
         """Save metadata about the index"""
@@ -395,7 +562,7 @@ def main():
     """Example usage"""
     try:
         # Initialize builder
-        builder = LegalIndexBuilder()
+        builder = LegalIndexBuilder(enable_monitoring=False)
 
         # Check if data file exists
         data_file = "data/food_safety_act.json"

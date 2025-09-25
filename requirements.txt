@@ -22,3 +22,6 @@ tiktoken>=0.5.2,<1.0.0
 # Development and utilities
 rich>=13.7.0,<14.0.0
 tqdm>=4.66.1,<5.0.0
+
+# Monitoring and logging
+wandb>=0.15.0,<0.17.0

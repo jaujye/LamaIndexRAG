@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 台灣食品安全衛生管理法 RAG 知識檢索系統
-主要CLI介面程式
+主要CLI介面程式 (不含 W&B 監控)
 """
 
 import os
@@ -25,85 +25,19 @@ from src.data_fetcher import FoodSafetyActFetcher
 from src.document_processor import LegalDocumentProcessor
 from src.index_builder import LegalIndexBuilder
 from src.rag_system import LegalRAGSystem
-from src.monitoring import WandbMonitor, initialize_global_monitor, create_config_from_env
 
 
 class FoodSafetyRAGCLI:
-    """食品安全法RAG系統的CLI介面，整合 W&B 監控"""
+    """食品安全法RAG系統的CLI介面（簡化版，不含監控）"""
 
-    def __init__(self, enable_monitoring: bool = True):
+    def __init__(self):
         self.console = Console()
         self.data_file = Path("data/food_safety_act.json")
         self.env_file = Path(".env")
 
-        # 監控設置
-        self.enable_monitoring = enable_monitoring
-        self.monitor: Optional[WandbMonitor] = None
-        self.session_start_time = time.time()
-
         # 系統組件
         self.rag_system: Optional[LegalRAGSystem] = None
         self.index_builder: Optional[LegalIndexBuilder] = None
-
-    def setup_monitoring(self):
-        """設置 W&B 監控"""
-        if not self.enable_monitoring:
-            return
-
-        try:
-            # 載入環境變數
-            from dotenv import load_dotenv
-            load_dotenv()
-
-            # 檢查 W&B 設定
-            wandb_mode = os.getenv("WANDB_MODE", "online")
-            wandb_project = os.getenv("WANDB_PROJECT", "food-safety-rag")
-
-            if wandb_mode == "disabled":
-                self.console.print("[yellow]W&B 監控已停用[/yellow]")
-                self.enable_monitoring = False
-                return
-
-            # 初始化監控器
-            try:
-                self.monitor = WandbMonitor(
-                    project_name=wandb_project,
-                    mode=wandb_mode,
-                    tags=["cli-session", "food-safety"]
-                )
-            except Exception as e:
-                self.console.print(f"[yellow]監控器初始化失敗: {e}[/yellow]")
-                self.enable_monitoring = False
-                self.monitor = None
-                return
-
-            # 設定為全域監控器
-            try:
-                initialize_global_monitor(
-                    project_name=wandb_project,
-                    mode=wandb_mode,
-                    tags=["cli-session", "food-safety"]
-                )
-            except Exception as e:
-                self.console.print(f"[yellow]全域監控器設定失敗: {e}[/yellow]")
-
-            # 初始化 W&B run
-            if self.monitor:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                config = create_config_from_env()
-                config["session_type"] = "cli"
-
-                self.monitor.init_run(
-                    run_name=f"cli_session_{timestamp}",
-                    config=config
-                )
-
-                self.console.print(f"[green]W&B 監控已啟用 - 專案: {wandb_project}[/green]")
-
-        except Exception as e:
-            self.console.print(f"[yellow]W&B 監控初始化失敗: {e}[/yellow]")
-            self.enable_monitoring = False
-            self.monitor = None
 
     def check_environment(self) -> bool:
         """檢查環境設置"""
@@ -127,25 +61,9 @@ class FoodSafetyRAGCLI:
             self.console.print("\n[red]環境設置問題：[/red]")
             for issue in issues:
                 self.console.print(f"  {issue}")
-
-            # 記錄環境檢查失敗
-            if self.monitor:
-                self.monitor.log_metrics({
-                    "environment_check_passed": False,
-                    "environment_issues_count": len(issues)
-                })
-
             return False
 
         self.console.print("[OK] 環境檢查通過")
-
-        # 記錄環境檢查成功
-        if self.monitor:
-            self.monitor.log_metrics({
-                "environment_check_passed": True,
-                "environment_issues_count": 0
-            })
-
         return True
 
     def setup_data(self) -> bool:
@@ -183,26 +101,14 @@ class FoodSafetyRAGCLI:
     def build_index(self, reset: bool = False) -> bool:
         """建立向量索引"""
         try:
-            # 傳遞監控器到索引建構器
-            self.index_builder = LegalIndexBuilder(
-                enable_monitoring=self.enable_monitoring,
-                monitor=self.monitor
-            )
+            # 使用 LegalIndexBuilder（停用監控）
+            self.index_builder = LegalIndexBuilder(enable_monitoring=False)
 
             # 檢查是否已有索引
             existing_index = self.index_builder.load_existing_index()
 
             if existing_index and not reset:
                 self.console.print("[OK] 找到現有索引，跳過建立步驟")
-
-                # 記錄跳過索引建立
-                if self.monitor:
-                    self.monitor.log_metrics({
-                        "index_build_skipped": True,
-                        "index_exists": True,
-                        "reset_requested": reset
-                    })
-
                 return True
 
             self.console.print("\n[yellow]建立向量索引...[/yellow]")
@@ -230,15 +136,6 @@ class FoodSafetyRAGCLI:
 
         except Exception as e:
             self.console.print(f"[FAIL] 索引建立失敗: {e}")
-
-            # 記錄索引建立失敗
-            if self.monitor:
-                self.monitor.log_error(
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                    context={"operation": "build_index", "reset": reset}
-                )
-
             return False
 
     def initialize_rag_system(self) -> bool:
@@ -246,39 +143,18 @@ class FoodSafetyRAGCLI:
         try:
             self.console.print("\n[yellow]初始化RAG查詢系統...[/yellow]")
 
-            # 傳遞監控器到 RAG 系統
-            self.rag_system = LegalRAGSystem(
-                enable_monitoring=self.enable_monitoring,
-                monitor=self.monitor
-            )
+            # 使用原始的 LegalRAGSystem（不含監控）
+            self.rag_system = LegalRAGSystem()
             self.rag_system.setup_query_engine(
                 similarity_top_k=10,
                 similarity_cutoff=0.3
             )
 
             self.console.print("[OK] RAG系統初始化完成")
-
-            # 記錄 RAG 系統初始化成功
-            if self.monitor:
-                self.monitor.log_metrics({
-                    "rag_system_initialized": True,
-                    "similarity_top_k": 10,
-                    "similarity_cutoff": 0.3
-                })
-
             return True
 
         except Exception as e:
             self.console.print(f"[FAIL] RAG系統初始化失敗: {e}")
-
-            # 記錄 RAG 系統初始化失敗
-            if self.monitor:
-                self.monitor.log_error(
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                    context={"operation": "initialize_rag_system"}
-                )
-
             return False
 
     def show_index_stats(self, stats: dict):
@@ -304,17 +180,13 @@ class FoodSafetyRAGCLI:
     def query_interface(self):
         """互動式查詢介面"""
         self.console.print("\n" + "="*60)
-        panel_text = "[bold blue]台灣食品安全衛生管理法 RAG 知識檢索系統[/bold blue]\n" \
-                    "輸入您的問題，系統將基於法規內容為您解答\n" \
-                    "[dim]輸入 'quit' 或 'exit' 結束程式[/dim]"
-
-        if self.enable_monitoring and self.monitor:
-            panel_text += "\n[dim]🔍 W&B 監控已啟用[/dim]"
-
-        self.console.print(Panel.fit(panel_text, border_style="blue"))
-
-        session_queries = 0
-        session_start = time.time()
+        self.console.print(Panel.fit(
+            "[bold blue]台灣食品安全衛生管理法 RAG 知識檢索系統[/bold blue]\n"
+            "輸入您的問題，系統將基於法規內容為您解答\n"
+            "[dim]輸入 'quit' 或 'exit' 結束程式[/dim]\n"
+            "[dim]💡 簡化版（不含 W&B 監控）[/dim]",
+            border_style="blue"
+        ))
 
         while True:
             try:
@@ -330,48 +202,17 @@ class FoodSafetyRAGCLI:
                 # 執行查詢
                 self.console.print("\n[yellow]🔍 搜尋相關法規...[/yellow]")
 
-                query_start = time.time()
                 result = self.rag_system.query(question)
-                query_time = time.time() - query_start
-
-                session_queries += 1
 
                 # 顯示結果
                 self.display_query_result(result)
-
-                # 記錄互動式查詢統計
-                if self.monitor:
-                    self.monitor.log_metrics({
-                        "session_queries": session_queries,
-                        "session_duration": time.time() - session_start,
-                        "interactive_mode": True,
-                        "query_response_time": query_time
-                    })
 
             except KeyboardInterrupt:
                 break
             except Exception as e:
                 self.console.print(f"[FAIL] 查詢錯誤: {e}")
 
-                # 記錄查詢錯誤
-                if self.monitor:
-                    self.monitor.log_error(
-                        error_type=type(e).__name__,
-                        error_message=str(e),
-                        context={"operation": "interactive_query", "session_queries": session_queries}
-                    )
-
-        session_time = time.time() - session_start
         self.console.print("\n[green]感謝使用食品安全法規知識檢索系統！[/green]")
-
-        # 記錄會話摘要
-        if self.monitor:
-            self.monitor.create_summary({
-                "session_total_queries": session_queries,
-                "session_total_time": session_time,
-                "session_avg_query_time": session_time / session_queries if session_queries > 0 else 0,
-                "session_type": "interactive"
-            })
 
     def display_query_result(self, result):
         """顯示查詢結果"""
@@ -450,44 +291,10 @@ class FoodSafetyRAGCLI:
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(output_data, f, ensure_ascii=False, indent=2)
 
-    def finish_monitoring_session(self):
-        """完成監控會話"""
-        if not self.monitor:
-            return
-
-        try:
-            # 計算會話總時間
-            total_session_time = time.time() - self.session_start_time
-
-            # 建立最終摘要
-            final_summary = {
-                "total_session_time": total_session_time,
-                "session_end_time": datetime.now().isoformat(),
-                "monitoring_enabled": self.enable_monitoring
-            }
-
-            # 如果有 RAG 系統，加入其統計資訊
-            if self.rag_system:
-                rag_stats = self.rag_system.get_system_stats()
-                final_summary.update({
-                    "total_queries_processed": rag_stats.get("total_queries", 0),
-                    "avg_query_time": rag_stats.get("avg_query_time", 0.0)
-                })
-
-            self.monitor.create_summary(final_summary)
-            self.monitor.finish_run()
-            self.console.print("[dim]W&B 監控會話已結束[/dim]")
-
-        except Exception as e:
-            self.console.print(f"[yellow]完成監控會話時發生錯誤: {e}[/yellow]")
-
     def run(self, args):
         """主要執行邏輯"""
-        self.console.print("[bold blue]食品安全衛生管理法 RAG 系統[/bold blue]\n")
-
-        # 初始化監控
-        if self.enable_monitoring:
-            self.setup_monitoring()
+        self.console.print("[bold blue]食品安全衛生管理法 RAG 系統[/bold blue]")
+        self.console.print("[dim]簡化版（不含 W&B 監控）[/dim]\n")
 
         # 環境檢查
         if not self.check_environment():
@@ -510,10 +317,7 @@ class FoodSafetyRAGCLI:
         else:
             # 檢查現有索引
             try:
-                self.index_builder = LegalIndexBuilder(
-                    enable_monitoring=self.enable_monitoring,
-                    monitor=self.monitor
-                )
+                self.index_builder = LegalIndexBuilder(enable_monitoring=False)
                 if self.index_builder.load_existing_index():
                     stats = self.index_builder.get_index_stats()
                     self.console.print("[OK] 載入現有索引")
@@ -537,33 +341,22 @@ class FoodSafetyRAGCLI:
         elif args.query:
             result = self.rag_system.query(args.query)
             self.display_query_result(result)
-
-            # 記錄單一查詢模式
-            if self.monitor:
-                self.monitor.create_summary({
-                    "session_type": "single_query",
-                    "query_text": args.query[:100] + "..." if len(args.query) > 100 else args.query
-                })
         else:
             self.query_interface()
-
-        # 完成監控會話
-        self.finish_monitoring_session()
 
 
 def main():
     """主程式入口"""
     parser = argparse.ArgumentParser(
-        description="台灣食品安全衛生管理法 RAG 知識檢索系統 (含 W&B 監控)",
+        description="台灣食品安全衛生管理法 RAG 知識檢索系統 (簡化版)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
-  python main.py                          # 啟動互動式查詢介面
-  python main.py -q "食品添加物的限制？"      # 單一查詢
-  python main.py --fetch-data              # 重新下載法規資料
-  python main.py --rebuild-index           # 重建向量索引
-  python main.py --batch questions.txt     # 批次查詢
-  python main.py --no-monitoring          # 停用 W&B 監控
+  python main_no_wandb.py                          # 啟動互動式查詢介面
+  python main_no_wandb.py -q "食品添加物的限制？"      # 單一查詢
+  python main_no_wandb.py --fetch-data              # 重新下載法規資料
+  python main_no_wandb.py --rebuild-index           # 重建向量索引
+  python main_no_wandb.py --batch questions.txt     # 批次查詢
         """
     )
 
@@ -577,8 +370,6 @@ def main():
                        help="批次查詢檔案路徑")
     parser.add_argument("--stats", dest="show_stats", action="store_true",
                        help="顯示索引統計資訊")
-    parser.add_argument("--no-monitoring", action="store_true",
-                       help="停用 W&B 監控")
 
     args = parser.parse_args()
 
@@ -588,7 +379,7 @@ def main():
         sys.exit(1)
 
     try:
-        cli = FoodSafetyRAGCLI(enable_monitoring=not args.no_monitoring)
+        cli = FoodSafetyRAGCLI()
         cli.run(args)
     except KeyboardInterrupt:
         print("\n程式已中止")
