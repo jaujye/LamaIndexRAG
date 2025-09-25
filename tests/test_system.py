@@ -15,6 +15,9 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, track
 from dotenv import load_dotenv
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 # 載入環境變數
 load_dotenv()
@@ -153,7 +156,7 @@ def test_index_builder():
     try:
         from src.index_builder import LegalIndexBuilder
 
-        builder = LegalIndexBuilder()
+        builder = LegalIndexBuilder(enable_monitoring=False)
 
         # 檢查現有索引
         console.print("檢查現有索引...")

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-台灣食品安全衛生管理法 RAG 知識檢索系統
+台灣法規 RAG 知識檢索系統
+支持食品安全衛生管理法、勞動基準法及多法規整合查詢
 主要CLI介面程式
 """
 
@@ -22,18 +23,23 @@ from rich.text import Text
 from rich import print as rprint
 
 from src.data_fetcher import FoodSafetyActFetcher
+from src.labor_law_fetcher import LaborLawFetcher
 from src.document_processor import LegalDocumentProcessor
+from src.enhanced_document_processor import EnhancedLegalProcessor
 from src.index_builder import LegalIndexBuilder
 from src.rag_system import LegalRAGSystem
+from src.query_router import QueryRouter
+from src.advanced_rag_system import AdvancedRAGSystem
 from src.monitoring import WandbMonitor, initialize_global_monitor, create_config_from_env
 
 
-class FoodSafetyRAGCLI:
-    """食品安全法RAG系統的CLI介面，整合 W&B 監控"""
+class LegalRAGCLI:
+    """台灣法規RAG系統的CLI介面，支持食品安全法、勞基法及多法規整合查詢，整合 W&B 監控"""
 
     def __init__(self, enable_monitoring: bool = True):
         self.console = Console()
-        self.data_file = Path("data/food_safety_act.json")
+        self.food_safety_data_file = Path("data/food_safety_act.json")
+        self.labor_law_data_file = Path("data/labor_standards_act.json")
         self.env_file = Path(".env")
 
         # 監控設置
@@ -43,6 +49,8 @@ class FoodSafetyRAGCLI:
 
         # 系統組件
         self.rag_system: Optional[LegalRAGSystem] = None
+        self.query_router: Optional[QueryRouter] = None
+        self.advanced_rag_system: Optional[AdvancedRAGSystem] = None
         self.index_builder: Optional[LegalIndexBuilder] = None
 
     def setup_monitoring(self):
@@ -120,8 +128,8 @@ class FoodSafetyRAGCLI:
                 issues.append("[FAIL] .env 檔案中未設定 OPENAI_API_KEY")
 
         # 檢查資料檔案
-        if not self.data_file.exists():
-            issues.append("[FAIL] 未找到法規資料檔案，需要先下載法規內容")
+        if not self.food_safety_data_file.exists() and not self.labor_law_data_file.exists():
+            issues.append("[FAIL] 未找到法規資料檔案，需要先下載法規內容（食品安全法或勞基法）")
 
         if issues:
             self.console.print("\n[red]環境設置問題：[/red]")
@@ -148,10 +156,10 @@ class FoodSafetyRAGCLI:
 
         return True
 
-    def setup_data(self) -> bool:
-        """設置資料（下載法規）"""
-        if self.data_file.exists():
-            if not Confirm.ask("資料檔案已存在，是否重新下載？"):
+    def setup_food_safety_data(self) -> bool:
+        """設置食品安全法資料（下載法規）"""
+        if self.food_safety_data_file.exists():
+            if not Confirm.ask("食品安全法資料檔案已存在，是否重新下載？"):
                 return True
 
         self.console.print("\n[yellow]開始下載台灣食品安全衛生管理法...[/yellow]")
@@ -169,22 +177,55 @@ class FoodSafetyRAGCLI:
                 articles = fetcher.fetch_all_articles()
 
                 progress.update(task, description="儲存資料...")
-                fetcher.save_to_json(str(self.data_file))
+                fetcher.save_to_json(str(self.food_safety_data_file))
 
                 progress.update(task, description="完成！")
 
-            self.console.print(f"[OK] 成功下載 {len(articles)} 條法規")
+            self.console.print(f"[OK] 成功下載 {len(articles)} 條食品安全法")
             return True
 
         except Exception as e:
-            self.console.print(f"[FAIL] 下載失敗: {e}")
+            self.console.print(f"[FAIL] 食品安全法下載失敗: {e}")
             return False
 
-    def build_index(self, reset: bool = False) -> bool:
-        """建立向量索引"""
+    def setup_labor_law_data(self) -> bool:
+        """設置勞基法資料（下載法規）"""
+        if self.labor_law_data_file.exists():
+            if not Confirm.ask("勞基法資料檔案已存在，是否重新下載？"):
+                return True
+
+        self.console.print("\n[yellow]開始下載台灣勞動基準法...[/yellow]")
+
+        try:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=self.console
+            ) as progress:
+
+                task = progress.add_task("下載法規內容...", total=None)
+
+                fetcher = LaborLawFetcher(delay=1.5)  # 稍長的延遲以示尊重
+                articles = fetcher.fetch_all_articles()
+
+                progress.update(task, description="儲存資料...")
+                fetcher.save_to_json(str(self.labor_law_data_file))
+
+                progress.update(task, description="完成！")
+
+            self.console.print(f"[OK] 成功下載 {len(articles)} 條勞基法")
+            return True
+
+        except Exception as e:
+            self.console.print(f"[FAIL] 勞基法下載失敗: {e}")
+            return False
+
+    def build_food_safety_index(self, reset: bool = False) -> bool:
+        """建立食品安全法向量索引"""
         try:
             # 傳遞監控器到索引建構器
             self.index_builder = LegalIndexBuilder(
+                collection_name="food_safety_act",
                 enable_monitoring=self.enable_monitoring,
                 monitor=self.monitor
             )
@@ -193,19 +234,19 @@ class FoodSafetyRAGCLI:
             existing_index = self.index_builder.load_existing_index()
 
             if existing_index and not reset:
-                self.console.print("[OK] 找到現有索引，跳過建立步驟")
+                self.console.print("[OK] 找到現有食品安全法索引，跳過建立步驟")
 
                 # 記錄跳過索引建立
                 if self.monitor:
                     self.monitor.log_metrics({
-                        "index_build_skipped": True,
+                        "food_safety_index_build_skipped": True,
                         "index_exists": True,
                         "reset_requested": reset
                     })
 
                 return True
 
-            self.console.print("\n[yellow]建立向量索引...[/yellow]")
+            self.console.print("\n[yellow]建立食品安全法向量索引...[/yellow]")
 
             with Progress(
                 SpinnerColumn(),
@@ -213,38 +254,121 @@ class FoodSafetyRAGCLI:
                 console=self.console
             ) as progress:
 
-                task = progress.add_task("處理文件並建立索引...", total=None)
+                task = progress.add_task("處理食品安全法文件並建立索引...", total=None)
 
                 index = self.index_builder.build_index_from_json(
-                    str(self.data_file),
+                    str(self.food_safety_data_file),
                     reset=reset
                 )
 
-                progress.update(task, description="索引建立完成！")
+                progress.update(task, description="食品安全法索引建立完成！")
 
             # 顯示統計資訊
             stats = self.index_builder.get_index_stats()
-            self.show_index_stats(stats)
+            self.show_index_stats(stats, "食品安全法")
 
             return True
 
         except Exception as e:
-            self.console.print(f"[FAIL] 索引建立失敗: {e}")
+            self.console.print(f"[FAIL] 食品安全法索引建立失敗: {e}")
 
             # 記錄索引建立失敗
             if self.monitor:
                 self.monitor.log_error(
                     error_type=type(e).__name__,
                     error_message=str(e),
-                    context={"operation": "build_index", "reset": reset}
+                    context={"operation": "build_food_safety_index", "reset": reset}
                 )
 
             return False
 
-    def initialize_rag_system(self) -> bool:
-        """初始化RAG系統"""
+    def build_labor_law_index(self, reset: bool = False) -> bool:
+        """建立勞基法向量索引"""
         try:
-            self.console.print("\n[yellow]初始化RAG查詢系統...[/yellow]")
+            if not self.labor_law_data_file.exists():
+                self.console.print("[FAIL] 勞基法資料檔案不存在，請先下載資料")
+                return False
+
+            self.console.print("\n[yellow]建立勞基法向量索引...[/yellow]")
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=self.console
+            ) as progress:
+
+                task = progress.add_task("處理勞基法文件並建立索引...", total=None)
+
+                # 使用增強處理器
+                processor = EnhancedLegalProcessor(chunk_size=512, chunk_overlap=50)
+
+                # 載入勞基法資料
+                with open(self.labor_law_data_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                # 處理文章
+                chunks = processor.create_semantic_chunks(data['articles'])
+                progress.update(task, description=f"創建了 {len(chunks)} 個語意塊")
+
+                # 初始化勞基法索引建構器
+                index_builder = LegalIndexBuilder(
+                    collection_name="labor_law",
+                    enable_monitoring=False  # 避免編碼問題
+                )
+
+                # 轉換為文檔
+                documents = processor.convert_to_llama_documents(chunks)
+                progress.update(task, description=f"轉換了 {len(documents)} 個文檔")
+
+                # 建立ChromaDB集合
+                collection = index_builder.create_collection(reset=reset)
+
+                # 建立向量索引
+                from llama_index.vector_stores.chroma import ChromaVectorStore
+                from llama_index.core import VectorStoreIndex, StorageContext
+
+                vector_store = ChromaVectorStore(chroma_collection=collection)
+                storage_context = StorageContext.from_defaults(vector_store=vector_store)
+
+                index = VectorStoreIndex.from_documents(
+                    documents,
+                    storage_context=storage_context,
+                    show_progress=False
+                )
+
+                progress.update(task, description="勞基法索引建立完成！")
+
+            # 保存元數據
+            stats = processor.get_processing_stats(chunks)
+            metadata = {
+                'law_name': data['law_name'],
+                'law_code': data['law_code'],
+                'source_url': data['source_url'],
+                'total_articles': data['total_articles'],
+                'collection_name': 'labor_law',
+                'processing_stats': stats
+            }
+
+            with open('data/labor_law_index_metadata.json', 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+            self.console.print(f"[OK] 勞基法索引建立完成！集合: labor_law，文檔: {len(documents)}")
+
+            # 顯示統計資訊
+            self.show_enhanced_stats(stats, "勞基法")
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"[FAIL] 勞基法索引建立失敗: {e}")
+            import traceback
+            self.console.print(traceback.format_exc())
+            return False
+
+    def initialize_single_rag_system(self) -> bool:
+        """初始化單一法規RAG系統（向後相容）"""
+        try:
+            self.console.print("\n[yellow]初始化單一法規RAG查詢系統...[/yellow]")
 
             # 傳遞監控器到 RAG 系統
             self.rag_system = LegalRAGSystem(
@@ -256,7 +380,7 @@ class FoodSafetyRAGCLI:
                 similarity_cutoff=0.3
             )
 
-            self.console.print("[OK] RAG系統初始化完成")
+            self.console.print("[OK] 單一法規RAG系統初始化完成")
 
             # 記錄 RAG 系統初始化成功
             if self.monitor:
@@ -269,21 +393,64 @@ class FoodSafetyRAGCLI:
             return True
 
         except Exception as e:
-            self.console.print(f"[FAIL] RAG系統初始化失敗: {e}")
+            self.console.print(f"[FAIL] 單一法規RAG系統初始化失敗: {e}")
 
             # 記錄 RAG 系統初始化失敗
             if self.monitor:
                 self.monitor.log_error(
                     error_type=type(e).__name__,
                     error_message=str(e),
-                    context={"operation": "initialize_rag_system"}
+                    context={"operation": "initialize_single_rag_system"}
                 )
 
             return False
 
-    def show_index_stats(self, stats: dict):
+    def initialize_multi_domain_system(self) -> bool:
+        """初始化多法規整合系統"""
+        try:
+            self.console.print("\n[yellow]初始化多法規整合查詢系統...[/yellow]")
+
+            # 初始化查詢路由器
+            self.query_router = QueryRouter(
+                chroma_host="192.168.0.114",
+                chroma_port=7000
+            )
+
+            # 初始化進階RAG系統
+            self.advanced_rag_system = AdvancedRAGSystem(
+                chroma_host="192.168.0.114",
+                chroma_port=7000
+            )
+
+            self.console.print("[OK] 多法規整合系統初始化完成")
+
+            # 記錄多法規系統初始化成功
+            if self.monitor:
+                self.monitor.log_metrics({
+                    "multi_domain_system_initialized": True,
+                    "query_router_enabled": True,
+                    "advanced_rag_enabled": True
+                })
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"[FAIL] 多法規整合系統初始化失敗: {e}")
+
+            # 記錄多法規系統初始化失敗
+            if self.monitor:
+                self.monitor.log_error(
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    context={"operation": "initialize_multi_domain_system"}
+                )
+
+            return False
+
+    def show_index_stats(self, stats: dict, law_name: str = ""):
         """顯示索引統計資訊"""
-        table = Table(title="索引統計資訊")
+        title = f"{law_name}索引統計資訊" if law_name else "索引統計資訊"
+        table = Table(title=title)
         table.add_column("項目", style="cyan")
         table.add_column("數值", style="green")
 
@@ -301,10 +468,27 @@ class FoodSafetyRAGCLI:
 
         self.console.print(table)
 
-    def query_interface(self):
-        """互動式查詢介面"""
+    def show_enhanced_stats(self, stats: dict, law_name: str = ""):
+        """顯示增強處理統計資訊"""
+        title = f"{law_name}增強處理統計" if law_name else "增強處理統計"
+        table = Table(title=title)
+        table.add_column("項目", style="cyan")
+        table.add_column("數值", style="green")
+
+        table.add_row("總關鍵字數", str(stats.get("total_keywords", 0)))
+        table.add_row("總概念數", str(stats.get("total_concepts", 0)))
+        table.add_row("總交叉引用數", str(stats.get("total_cross_references", 0)))
+        table.add_row("平均重要性分數", f"{stats.get('avg_importance_score', 0):.3f}")
+        table.add_row("高重要性塊數", str(stats.get("high_importance_chunks", 0)))
+        table.add_row("引用圖節點數", str(stats.get("graph_nodes", 0)))
+        table.add_row("引用圖邊數", str(stats.get("graph_edges", 0)))
+
+        self.console.print(table)
+
+    def single_domain_query_interface(self):
+        """單一法規互動式查詢介面（向後相容）"""
         self.console.print("\n" + "="*60)
-        panel_text = "[bold blue]台灣食品安全衛生管理法 RAG 知識檢索系統[/bold blue]\n" \
+        panel_text = "[bold blue]台灣法規 RAG 知識檢索系統[/bold blue]\n" \
                     "輸入您的問題，系統將基於法規內容為您解答\n" \
                     "[dim]輸入 'quit' 或 'exit' 結束程式[/dim]"
 
@@ -362,7 +546,7 @@ class FoodSafetyRAGCLI:
                     )
 
         session_time = time.time() - session_start
-        self.console.print("\n[green]感謝使用食品安全法規知識檢索系統！[/green]")
+        self.console.print("\n[green]感謝使用法規知識檢索系統！[/green]")
 
         # 記錄會話摘要
         if self.monitor:
@@ -370,7 +554,83 @@ class FoodSafetyRAGCLI:
                 "session_total_queries": session_queries,
                 "session_total_time": session_time,
                 "session_avg_query_time": session_time / session_queries if session_queries > 0 else 0,
-                "session_type": "interactive"
+                "session_type": "single_domain_interactive"
+            })
+
+    def multi_domain_query_interface(self):
+        """多法規整合互動式查詢介面"""
+        self.console.print("\n" + "="*60)
+        panel_text = "[bold blue]台灣多法規整合 RAG 知識檢索系統[/bold blue]\n" \
+                    "支持食品安全法、勞基法及跨法規查詢\n" \
+                    "系統將智能路由您的問題到最適合的法規知識庫\n" \
+                    "[dim]輸入 'quit' 或 'exit' 結束程式[/dim]"
+
+        if self.enable_monitoring and self.monitor:
+            panel_text += "\n[dim]🔍 W&B 監控已啟用[/dim]"
+
+        self.console.print(Panel.fit(panel_text, border_style="blue"))
+
+        session_queries = 0
+        session_start = time.time()
+
+        while True:
+            try:
+                # 獲取使用者問題
+                question = Prompt.ask("\n[bold cyan]請輸入您的問題[/bold cyan]")
+
+                if question.lower() in ['quit', 'exit', '退出']:
+                    break
+
+                if not question.strip():
+                    continue
+
+                # 執行多法規查詢
+                self.console.print("\n[yellow]🔍 智能路由查詢到相關法規...[/yellow]")
+
+                query_start = time.time()
+                response = self.query_router.route_query(question, top_k=5)
+                query_time = time.time() - query_start
+
+                session_queries += 1
+
+                # 顯示多法規查詢結果
+                self.display_multi_domain_result(response)
+
+                # 記錄互動式查詢統計
+                if self.monitor:
+                    self.monitor.log_metrics({
+                        "session_queries": session_queries,
+                        "session_duration": time.time() - session_start,
+                        "interactive_mode": True,
+                        "multi_domain_mode": True,
+                        "query_response_time": query_time,
+                        "primary_kb": response.route_decision.primary_kb.value,
+                        "routing_confidence": response.route_decision.confidence_score
+                    })
+
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                self.console.print(f"[FAIL] 查詢錯誤: {e}")
+
+                # 記錄查詢錯誤
+                if self.monitor:
+                    self.monitor.log_error(
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                        context={"operation": "multi_domain_interactive_query", "session_queries": session_queries}
+                    )
+
+        session_time = time.time() - session_start
+        self.console.print("\n[green]感謝使用多法規整合知識檢索系統！[/green]")
+
+        # 記錄會話摘要
+        if self.monitor:
+            self.monitor.create_summary({
+                "session_total_queries": session_queries,
+                "session_total_time": session_time,
+                "session_avg_query_time": session_time / session_queries if session_queries > 0 else 0,
+                "session_type": "multi_domain_interactive"
             })
 
     def display_query_result(self, result):
@@ -408,6 +668,48 @@ class FoodSafetyRAGCLI:
                 )
 
             self.console.print(sources_table)
+
+    def display_multi_domain_result(self, response):
+        """顯示多法規查詢結果"""
+        # 路由資訊
+        self.console.print(f"\n[dim]🧠 查詢路由: {response.route_decision.primary_kb.value} " +
+                          f"(信心度: {response.route_decision.confidence_score:.2f})[/dim]")
+        if response.route_decision.secondary_kbs:
+            secondary = ", ".join([kb.value for kb in response.route_decision.secondary_kbs])
+            self.console.print(f"[dim]次要查詢: {secondary}[/dim]")
+
+        # 融合回答
+        if response.fused_response:
+            self.console.print(Panel(
+                response.fused_response,
+                title="[bold green] 法規解答[/bold green]",
+                border_style="green"
+            ))
+        else:
+            self.console.print("[yellow]未找到相關資訊[/yellow]")
+
+        # 顯示各法規的查詢結果摘要
+        if len(response.responses) > 1:
+            self.console.print("\n[bold cyan]📈 各法規查詢結果:[/bold cyan]")
+
+            results_table = Table()
+            results_table.add_column("法規", style="cyan")
+            results_table.add_column("相關文檔數", style="yellow")
+            results_table.add_column("答案預覽", style="white")
+
+            for kb_name, kb_response in response.responses.items():
+                if "error" not in kb_response:
+                    law_name = "勞基法" if kb_name == "labor_law" else "食品安全法"
+                    doc_count = len(kb_response.get('metadata', {}).get('retrieved_nodes', []))
+                    answer_preview = kb_response.get('response', '')[:100] + "..." if len(kb_response.get('response', '')) > 100 else kb_response.get('response', '')
+
+                    results_table.add_row(
+                        law_name,
+                        str(doc_count),
+                        answer_preview
+                    )
+
+            self.console.print(results_table)
 
     def batch_query_mode(self, questions_file: str):
         """批次查詢模式"""
@@ -481,9 +783,41 @@ class FoodSafetyRAGCLI:
         except Exception as e:
             self.console.print(f"[yellow]完成監控會話時發生錯誤: {e}[/yellow]")
 
+    def show_all_domain_stats(self):
+        """顯示所有法規索引統計資訊"""
+        self.console.print("\n[bold blue]所有法規索引統計資訊[/bold blue]")
+
+        # 食品安全法統計
+        if self.food_safety_data_file.exists():
+            try:
+                index_builder = LegalIndexBuilder(
+                    collection_name="food_safety_act",
+                    enable_monitoring=False
+                )
+                if index_builder.load_existing_index():
+                    stats = index_builder.get_index_stats()
+                    self.show_index_stats(stats, "食品安全法")
+                else:
+                    self.console.print("[yellow]食品安全法索引不存在[/yellow]")
+            except Exception as e:
+                self.console.print(f"[yellow]無法載入食品安全法索引: {e}[/yellow]")
+        else:
+            self.console.print("[yellow]食品安全法資料不存在[/yellow]")
+
+        # 勞基法統計
+        if Path("data/labor_law_index_metadata.json").exists():
+            try:
+                with open('data/labor_law_index_metadata.json', 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                self.show_enhanced_stats(metadata.get('processing_stats', {}), "勞基法")
+            except Exception as e:
+                self.console.print(f"[yellow]無法載入勞基法統計: {e}[/yellow]")
+        else:
+            self.console.print("[yellow]勞基法索引不存在[/yellow]")
+
     def run(self, args):
         """主要執行邏輯"""
-        self.console.print("[bold blue]食品安全衛生管理法 RAG 系統[/bold blue]\n")
+        self.console.print("[bold blue]台灣法規 RAG 知識檢索系統[/bold blue]\n")
 
         # 初始化監控
         if self.enable_monitoring:
@@ -498,54 +832,117 @@ class FoodSafetyRAGCLI:
                 self.console.print("3. 重新執行程式")
             return
 
-        # 設置資料
-        if args.fetch_data or not self.data_file.exists():
-            if not self.setup_data():
-                return
-
-        # 建立索引
-        if args.rebuild_index or not Path("chroma_db").exists():
-            if not self.build_index(reset=args.rebuild_index):
-                return
-        else:
-            # 檢查現有索引
-            try:
-                self.index_builder = LegalIndexBuilder(
-                    enable_monitoring=self.enable_monitoring,
-                    monitor=self.monitor
-                )
-                if self.index_builder.load_existing_index():
-                    stats = self.index_builder.get_index_stats()
-                    self.console.print("[OK] 載入現有索引")
-                    if args.show_stats:
-                        self.show_index_stats(stats)
-                else:
-                    if not self.build_index():
-                        return
-            except Exception as e:
-                self.console.print(f"載入索引失敗: {e}")
-                if not self.build_index(reset=True):
-                    return
-
-        # 初始化RAG系統
-        if not self.initialize_rag_system():
+        # 處理所有統計資訊顯示
+        if args.show_all_stats:
+            self.show_all_domain_stats()
             return
 
-        # 執行對應模式
-        if args.batch_file:
-            self.batch_query_mode(args.batch_file)
-        elif args.query:
-            result = self.rag_system.query(args.query)
-            self.display_query_result(result)
+        # 處理食品安全法資料及索引
+        if args.fetch_food_data or (not self.food_safety_data_file.exists() and not args.multi_domain and not args.domain == 'labor'):
+            if not self.setup_food_safety_data():
+                return
 
-            # 記錄單一查詢模式
-            if self.monitor:
-                self.monitor.create_summary({
-                    "session_type": "single_query",
-                    "query_text": args.query[:100] + "..." if len(args.query) > 100 else args.query
-                })
+        # 處理勞基法資料及索引
+        if args.fetch_labor_data:
+            if not self.setup_labor_law_data():
+                return
+
+        # 建立食品安全法索引
+        if args.rebuild_food_index or (not Path("chroma_db").exists() and (not args.multi_domain and args.domain != 'labor')):
+            if not self.build_food_safety_index(reset=args.rebuild_food_index):
+                return
+
+        # 建立勞基法索引
+        if args.rebuild_labor_index:
+            if not self.build_labor_law_index(reset=True):
+                return
+
+        # 選擇運行模式
+        if args.multi_domain:
+            # 多法規整合模式
+            if not self.initialize_multi_domain_system():
+                return
+
+            # 執行對應模式
+            if args.batch_file:
+                self.multi_domain_batch_query_mode(args.batch_file)
+            elif args.query:
+                response = self.query_router.route_query(args.query, top_k=5)
+                self.display_multi_domain_result(response)
+
+                # 記錄單一查詢模式
+                if self.monitor:
+                    self.monitor.create_summary({
+                        "session_type": "multi_domain_single_query",
+                        "query_text": args.query[:100] + "..." if len(args.query) > 100 else args.query,
+                        "primary_kb": response.route_decision.primary_kb.value,
+                        "routing_confidence": response.route_decision.confidence_score
+                    })
+            else:
+                self.multi_domain_query_interface()
         else:
-            self.query_interface()
+            # 單一法規模式（向後相容）
+            if not self.initialize_single_rag_system():
+                return
+
+            # 執行對應模式
+            if args.batch_file:
+                self.batch_query_mode(args.batch_file)
+            elif args.query:
+                result = self.rag_system.query(args.query)
+                self.display_query_result(result)
+
+                # 記錄單一查詢模式
+                if self.monitor:
+                    self.monitor.create_summary({
+                        "session_type": "single_query",
+                        "query_text": args.query[:100] + "..." if len(args.query) > 100 else args.query
+                    })
+            else:
+                self.single_domain_query_interface()
+
+    def multi_domain_batch_query_mode(self, questions_file: str):
+        """多法規批次查詢模式"""
+        try:
+            with open(questions_file, 'r', encoding='utf-8') as f:
+                questions = [line.strip() for line in f if line.strip()]
+
+            self.console.print(f"[yellow]多法規批次處理 {len(questions)} 個問題...[/yellow]")
+
+            results = []
+            with Progress(console=self.console) as progress:
+                task = progress.add_task("處理問題...", total=len(questions))
+
+                for question in questions:
+                    response = self.query_router.route_query(question, top_k=5)
+                    results.append(response)
+                    progress.advance(task)
+
+            # 儲存結果
+            output_file = f"multi_domain_batch_results_{Path(questions_file).stem}.json"
+            self.save_multi_domain_batch_results(results, output_file)
+
+            self.console.print(f"[OK] 多法規批次查詢完成，結果已儲存至 {output_file}")
+
+        except Exception as e:
+            self.console.print(f"[FAIL] 多法規批次查詢失敗: {e}")
+
+    def save_multi_domain_batch_results(self, results, output_file: str):
+        """儲存多法規批次查詢結果"""
+        output_data = []
+        for response in results:
+            output_data.append({
+                "question": response.query,
+                "primary_kb": response.route_decision.primary_kb.value,
+                "confidence_score": response.route_decision.confidence_score,
+                "reasoning": response.route_decision.reasoning,
+                "fused_response": response.fused_response,
+                "responses": {kb: resp for kb, resp in response.responses.items() if "error" not in resp},
+                "metadata": response.metadata
+            })
+
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, ensure_ascii=False, indent=2)
 
         # 完成監控會話
         self.finish_monitoring_session()
@@ -554,33 +951,78 @@ class FoodSafetyRAGCLI:
 def main():
     """主程式入口"""
     parser = argparse.ArgumentParser(
-        description="台灣食品安全衛生管理法 RAG 知識檢索系統 (含 W&B 監控)",
+        description="台灣法規 RAG 知識檢索系統 - 支持食品安全法、勞基法及多法規整合查詢 (含 W&B 監控)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
-  python main.py                          # 啟動互動式查詢介面
-  python main.py -q "食品添加物的限制？"      # 單一查詢
-  python main.py --fetch-data              # 重新下載法規資料
-  python main.py --rebuild-index           # 重建向量索引
-  python main.py --batch questions.txt     # 批次查詢
-  python main.py --no-monitoring          # 停用 W&B 監控
+  # 基本使用
+  python main.py                                    # 單一法規互動式查詢
+  python main.py --multi-domain                     # 多法規整合互動式查詢
+  python main.py -q "食品添加物的限制？"            # 單一查詢
+  python main.py --multi-domain -q "勞工食品安全規定"  # 多法規單一查詢
+
+  # 資料管理
+  python main.py --fetch-food-data                  # 下載食品安全法資料
+  python main.py --fetch-labor-data                 # 下載勞基法資料
+  python main.py --rebuild-food-index               # 重建食品安全法索引
+  python main.py --rebuild-labor-index              # 重建勞基法索引
+
+  # 批次處理和統計
+  python main.py --batch questions.txt              # 單一法規批次查詢
+  python main.py --multi-domain --batch questions.txt # 多法規批次查詢
+  python main.py --all-stats                        # 顯示所有法規統計
+  python main.py --no-monitoring                    # 停用 W&B 監控
         """
     )
 
+    # 查詢相關參數
     parser.add_argument("-q", "--query",
                        help="執行單一查詢")
-    parser.add_argument("--fetch-data", action="store_true",
-                       help="重新下載法規資料")
-    parser.add_argument("--rebuild-index", action="store_true",
-                       help="重建向量索引")
+    parser.add_argument("--multi-domain", action="store_true",
+                       help="啟用多法規整合模式，支持智能路由和跨法規查詢")
+    parser.add_argument("--domain", choices=["food", "labor", "all"], default="food",
+                       help="指定查詢的法規領域 (預設: food)")
+
+    # 資料管理參數
+    parser.add_argument("--fetch-food-data", action="store_true",
+                       help="下載食品安全衛生管理法資料")
+    parser.add_argument("--fetch-labor-data", action="store_true",
+                       help="下載勞動基準法資料")
+    parser.add_argument("--rebuild-food-index", action="store_true",
+                       help="重建食品安全法向量索引")
+    parser.add_argument("--rebuild-labor-index", action="store_true",
+                       help="重建勞基法向量索引")
+
+    # 批次處理和統計參數
     parser.add_argument("--batch", dest="batch_file",
                        help="批次查詢檔案路徑")
-    parser.add_argument("--stats", dest="show_stats", action="store_true",
-                       help="顯示索引統計資訊")
+    parser.add_argument("--all-stats", action="store_true",
+                       help="顯示所有法規索引統計資訊")
+
+    # 系統參數
     parser.add_argument("--no-monitoring", action="store_true",
                        help="停用 W&B 監控")
 
+    # 向後相容參數
+    parser.add_argument("--fetch-data", action="store_true",
+                       help="(已廢棄) 請使用 --fetch-food-data")
+    parser.add_argument("--rebuild-index", action="store_true",
+                       help="(已廢棄) 請使用 --rebuild-food-index")
+    parser.add_argument("--stats", dest="show_stats", action="store_true",
+                       help="(已廢棄) 請使用 --all-stats")
+
     args = parser.parse_args()
+
+    # 處理向後相容參數
+    if args.fetch_data:
+        args.fetch_food_data = True
+        print("[WARNING] --fetch-data 已廢棄，自動轉換為 --fetch-food-data")
+    if args.rebuild_index:
+        args.rebuild_food_index = True
+        print("[WARNING] --rebuild-index 已廢棄，自動轉換為 --rebuild-food-index")
+    if args.show_stats:
+        args.show_all_stats = True
+        print("[WARNING] --stats 已廢棄，自動轉換為 --all-stats")
 
     # 檢查Python版本
     if sys.version_info < (3, 8):
@@ -588,7 +1030,7 @@ def main():
         sys.exit(1)
 
     try:
-        cli = FoodSafetyRAGCLI(enable_monitoring=not args.no_monitoring)
+        cli = LegalRAGCLI(enable_monitoring=not args.no_monitoring)
         cli.run(args)
     except KeyboardInterrupt:
         print("\n程式已中止")
