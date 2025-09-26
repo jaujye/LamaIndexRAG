@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 台灣法規 RAG 知識檢索系統
-支持食品安全衛生管理法、勞動基準法及多法規整合查詢
+支持食品安全衛生管理法、勞動基準法、民法及多法規整合查詢
 主要CLI介面程式
 """
 
@@ -57,6 +57,7 @@ from rich import print as rprint
 
 from src.legal_food_safety_fetcher import FoodSafetyActFetcher
 from src.labor_law_fetcher import LaborLawFetcher
+from src.civil_law_fetcher import CivilLawFetcher
 from src.legal_basic_processor import LegalDocumentProcessor
 from src.legal_enhanced_processor import EnhancedLegalProcessor
 from src.index_builder import LegalIndexBuilder
@@ -67,7 +68,7 @@ from src.monitoring import WandbMonitor, initialize_global_monitor, create_confi
 
 
 class LegalRAGCLI:
-    """台灣法規RAG系統的CLI介面，支持食品安全法、勞基法及多法規整合查詢，整合 W&B 監控"""
+    """台灣法規RAG系統的CLI介面，支持食品安全法、勞基法、民法及多法規整合查詢，整合 W&B 監控"""
 
     def __init__(self, enable_monitoring: bool = True):
         # Initialize console with UTF-8 for Windows compatibility
@@ -80,6 +81,7 @@ class LegalRAGCLI:
             self.console = Console()
         self.food_safety_data_file = Path("data/food_safety_act.json")
         self.labor_law_data_file = Path("data/labor_standards_act.json")
+        self.civil_law_data_file = Path("data/civil_code.json")
         self.env_file = Path(".env")
 
         # 監控設置
@@ -168,8 +170,8 @@ class LegalRAGCLI:
                 issues.append("[FAIL] .env 檔案中未設定 OPENAI_API_KEY")
 
         # 檢查資料檔案
-        if not self.food_safety_data_file.exists() and not self.labor_law_data_file.exists():
-            issues.append("[FAIL] 未找到法規資料檔案，需要先下載法規內容（食品安全法或勞基法）")
+        if not self.food_safety_data_file.exists() and not self.labor_law_data_file.exists() and not self.civil_law_data_file.exists():
+            issues.append("[FAIL] 未找到法規資料檔案，需要先下載法規內容（食品安全法、勞基法、民法）")
 
         if issues:
             self.console.print("\n[red]環境設置問題：[/red]")
@@ -258,6 +260,47 @@ class LegalRAGCLI:
 
         except Exception as e:
             self.console.print(f"[FAIL] 勞基法下載失敗: {e}")
+            return False
+
+    def setup_civil_law_data(self) -> bool:
+        """設置民法資料（下載法規）"""
+        if self.civil_law_data_file.exists():
+            if not Confirm.ask("民法資料檔案已存在，是否重新下載？"):
+                return True
+
+        self.console.print("\n[yellow]開始下載台灣民法...[/yellow]")
+        self.console.print("[dim]注意：民法有1229條，預計需要40分鐘以上時間[/dim]")
+
+        try:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=self.console
+            ) as progress:
+
+                task = progress.add_task("下載法規內容...", total=None)
+
+                fetcher = CivilLawFetcher(delay=2.0)  # 較長延遲以尊重伺服器
+                articles = fetcher.fetch_all_articles()
+
+                progress.update(task, description="儲存資料...")
+                fetcher.save_to_json(str(self.civil_law_data_file))
+
+                progress.update(task, description="完成！")
+
+            self.console.print(f"[OK] 成功下載 {len(articles)} 條民法")
+
+            # 顯示各編摘要
+            book_summary = fetcher.get_book_summary()
+            if book_summary:
+                self.console.print("\n各編摘要:")
+                for book, count in book_summary.items():
+                    self.console.print(f"  - {book}: {count} 條")
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"[FAIL] 民法下載失敗: {e}")
             return False
 
     def build_food_safety_index(self, reset: bool = False) -> bool:
@@ -401,6 +444,89 @@ class LegalRAGCLI:
 
         except Exception as e:
             self.console.print(f"[FAIL] 勞基法索引建立失敗: {e}")
+            import traceback
+            self.console.print(traceback.format_exc())
+            return False
+
+    def build_civil_law_index(self, reset: bool = False) -> bool:
+        """建立民法向量索引"""
+        try:
+            if not self.civil_law_data_file.exists():
+                self.console.print("[FAIL] 民法資料檔案不存在，請先下載資料")
+                return False
+
+            self.console.print("\n[yellow]建立民法向量索引...[/yellow]")
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=self.console
+            ) as progress:
+
+                task = progress.add_task("處理民法文件並建立索引...", total=None)
+
+                # 使用增強處理器
+                processor = EnhancedLegalProcessor(chunk_size=512, chunk_overlap=50)
+
+                # 載入民法資料
+                with open(self.civil_law_data_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                # 處理文章
+                chunks = processor.create_semantic_chunks(data['articles'])
+                progress.update(task, description=f"創建了 {len(chunks)} 個語意塊")
+
+                # 初始化民法索引建構器
+                index_builder = LegalIndexBuilder(
+                    collection_name="civil_law",
+                    enable_monitoring=False  # 避免編碼問題
+                )
+
+                # 轉換為文檔
+                documents = processor.convert_to_llama_documents(chunks)
+                progress.update(task, description=f"轉換了 {len(documents)} 個文檔")
+
+                # 建立ChromaDB集合
+                collection = index_builder.create_collection(reset=reset)
+
+                # 建立向量索引
+                from llama_index.vector_stores.chroma import ChromaVectorStore
+                from llama_index.core import VectorStoreIndex, StorageContext
+
+                vector_store = ChromaVectorStore(chroma_collection=collection)
+                storage_context = StorageContext.from_defaults(vector_store=vector_store)
+
+                index = VectorStoreIndex.from_documents(
+                    documents,
+                    storage_context=storage_context,
+                    show_progress=False
+                )
+
+                progress.update(task, description="民法索引建立完成！")
+
+            # 保存元數據
+            stats = processor.get_processing_stats(chunks)
+            metadata = {
+                'law_name': data['law_name'],
+                'law_code': data['law_code'],
+                'source_url': data['source_url'],
+                'total_articles': data['total_articles'],
+                'collection_name': 'civil_law',
+                'processing_stats': stats
+            }
+
+            with open('data/civil_law_index_metadata.json', 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+            self.console.print(f"[OK] 民法索引建立完成！集合: civil_law，文檔: {len(documents)}")
+
+            # 顯示統計資訊
+            self.show_enhanced_stats(stats, "民法")
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"[FAIL] 民法索引建立失敗: {e}")
             import traceback
             self.console.print(traceback.format_exc())
             return False
@@ -595,7 +721,7 @@ class LegalRAGCLI:
         """多法規整合互動式查詢介面"""
         self.console.print("\n" + "="*60)
         panel_text = "[bold blue]台灣多法規整合 RAG 知識檢索系統[/bold blue]\n" \
-                    "支持食品安全法、勞基法及跨法規查詢\n" \
+                    "支持食品安全法、勞基法、民法及跨法規查詢\n" \
                     "系統將智能路由您的問題到最適合的法規知識庫\n" \
                     "[dim]輸入 'quit' 或 'exit' 結束程式[/dim]"
 
@@ -731,7 +857,12 @@ class LegalRAGCLI:
 
             for kb_name, kb_response in response.responses.items():
                 if "error" not in kb_response:
-                    law_name = "勞基法" if kb_name == "labor_law" else "食品安全法"
+                    law_name_mapping = {
+                        "labor_law": "勞基法",
+                        "food_safety_act": "食品安全法",
+                        "civil_law": "民法"
+                    }
+                    law_name = law_name_mapping.get(kb_name, "未知法規")
                     doc_count = len(kb_response.get('metadata', {}).get('retrieved_nodes', []))
                     answer_preview = kb_response.get('response', '')
 
@@ -878,6 +1009,17 @@ class LegalRAGCLI:
         else:
             self.console.print("[yellow]勞基法索引不存在[/yellow]")
 
+        # 民法統計
+        if Path("data/civil_law_index_metadata.json").exists():
+            try:
+                with open('data/civil_law_index_metadata.json', 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                self.show_enhanced_stats(metadata.get('processing_stats', {}), "民法")
+            except Exception as e:
+                self.console.print(f"[yellow]無法載入民法統計: {e}[/yellow]")
+        else:
+            self.console.print("[yellow]民法索引不存在[/yellow]")
+
     def run(self, args):
         """主要執行邏輯"""
         self.console.print("[bold blue]台灣法規 RAG 知識檢索系統[/bold blue]\n")
@@ -910,6 +1052,11 @@ class LegalRAGCLI:
             if not self.setup_labor_law_data():
                 return
 
+        # 處理民法資料及索引
+        if args.fetch_civil_data:
+            if not self.setup_civil_law_data():
+                return
+
         # 建立食品安全法索引
         if args.rebuild_food_index or (not Path("chroma_db").exists() and (not args.multi_domain and args.domain != 'labor')):
             if not self.build_food_safety_index(reset=args.rebuild_food_index):
@@ -918,6 +1065,11 @@ class LegalRAGCLI:
         # 建立勞基法索引
         if args.rebuild_labor_index:
             if not self.build_labor_law_index(reset=True):
+                return
+
+        # 建立民法索引
+        if args.rebuild_civil_index:
+            if not self.build_civil_law_index(reset=True):
                 return
 
         # 選擇運行模式
@@ -1014,7 +1166,7 @@ class LegalRAGCLI:
 def main():
     """主程式入口"""
     parser = argparse.ArgumentParser(
-        description="台灣法規 RAG 知識檢索系統 - 支持食品安全法、勞基法及多法規整合查詢 (含 W&B 監控)",
+        description="台灣法規 RAG 知識檢索系統 - 支持食品安全法、勞基法、民法及多法規整合查詢 (含 W&B 監控)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
@@ -1027,8 +1179,10 @@ def main():
   # 資料管理
   python main.py --fetch-food-data                  # 下載食品安全法資料
   python main.py --fetch-labor-data                 # 下載勞基法資料
+  python main.py --fetch-civil-data                 # 下載民法資料
   python main.py --rebuild-food-index               # 重建食品安全法索引
   python main.py --rebuild-labor-index              # 重建勞基法索引
+  python main.py --rebuild-civil-index              # 重建民法索引
 
   # 批次處理和統計
   python main.py --batch questions.txt              # 單一法規批次查詢
@@ -1043,7 +1197,7 @@ def main():
                        help="執行單一查詢")
     parser.add_argument("--multi-domain", action="store_true",
                        help="啟用多法規整合模式，支持智能路由和跨法規查詢")
-    parser.add_argument("--domain", choices=["food", "labor", "all"], default="food",
+    parser.add_argument("--domain", choices=["food", "labor", "civil", "all"], default="food",
                        help="指定查詢的法規領域 (預設: food)")
 
     # 資料管理參數
@@ -1051,10 +1205,14 @@ def main():
                        help="下載食品安全衛生管理法資料")
     parser.add_argument("--fetch-labor-data", action="store_true",
                        help="下載勞動基準法資料")
+    parser.add_argument("--fetch-civil-data", action="store_true",
+                       help="下載台灣民法資料")
     parser.add_argument("--rebuild-food-index", action="store_true",
                        help="重建食品安全法向量索引")
     parser.add_argument("--rebuild-labor-index", action="store_true",
                        help="重建勞基法向量索引")
+    parser.add_argument("--rebuild-civil-index", action="store_true",
+                       help="重建民法向量索引")
 
     # 批次處理和統計參數
     parser.add_argument("--batch", dest="batch_file",

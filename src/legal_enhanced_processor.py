@@ -111,6 +111,7 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
 
         # Legal concept keywords for semantic analysis
         self.legal_concepts = {
+            # 勞動法相關概念
             '勞動契約': ['勞動契約', '契約', '僱傭', '聘僱', '試用期', '定期契約', '不定期契約'],
             '工資': ['工資', '薪資', '薪水', '報酬', '基本工資', '最低工資'],
             '工時': ['工時', '工作時間', '正常工時', '延長工時', '加班', '超時工作'],
@@ -120,6 +121,21 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
             '解僱': ['解僱', '終止契約', '資遣', '不當解僱', '預告期間'],
             '工會': ['工會', '團體協約', '勞資爭議', '集體談判'],
             '檢查': ['勞動檢查', '檢查', '違反', '處罰', '罰鍰'],
+
+            # 民法相關概念
+            '契約': ['契約', '合約', '契約關係', '契約義務', '契約責任', '債之關係'],
+            '物權': ['物權', '所有權', '用益物權', '擔保物權', '佔有', '抵押權', '質權', '留置權'],
+            '債權': ['債權', '債務', '債權人', '債務人', '給付', '債之發生', '債之消滅'],
+            '買賣': ['買賣', '買賣契約', '出賣人', '買受人', '交付', '價金', '瑕疵擔保'],
+            '租賃': ['租賃', '租賃契約', '出租人', '承租人', '租金', '押租金', '修繕'],
+            '贈與': ['贈與', '贈與契約', '贈與人', '受贈人', '撤銷贈與'],
+            '侵權': ['侵權', '侵權行為', '損害賠償', '故意', '過失', '無過失責任'],
+            '婚姻': ['婚姻', '夫妻', '婚約', '結婚', '離婚', '夫妻財產制', '贍養費'],
+            '親屬': ['親屬', '血親', '姻親', '扶養', '監護', '輔助', '未成年'],
+            '繼承': ['繼承', '遺產', '被繼承人', '繼承人', '遺囑', '遺贈', '特留分', '應繼分'],
+            '法律行為': ['法律行為', '意思表示', '代理', '無權代理', '條件', '期限', '撤銷', '無效'],
+            '時效': ['時效', '消滅時效', '取得時效', '中斷', '不完成'],
+            '人格權': ['人格權', '姓名權', '肖像權', '隱私權', '名譽', '信用'],
         }
 
         # Relationship graph for cross-references
@@ -235,9 +251,19 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
         score = 0.0
         content = article.get('content', '')
 
-        # Base score from article type
-        if '總則' in article.get('chapter', ''):
+        # Base score from article type (勞基法章節結構)
+        chapter = article.get('chapter', '')
+        if '總則' in chapter:
             score += 0.3  # General provisions are important
+
+        # Base score from article type (民法編別結構)
+        book = article.get('book', '')
+        if '總則編' in book:
+            score += 0.4  # 總則編最重要
+        elif '債編' in book or '物權編' in book:
+            score += 0.3  # 債編、物權編次重要
+        elif '親屬編' in book or '繼承編' in book:
+            score += 0.2  # 親屬編、繼承編相對重要
 
         # Score from cross-references (how often referenced by others)
         article_num = article.get('article_number', '')
@@ -254,25 +280,40 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
         if any(keyword in content for keyword in ['處', '罰', '元', '刑']):
             score += 0.2
 
-        # Score from key legal concepts
+        # Enhanced scoring for key legal concepts
         for concept_keywords in self.legal_concepts.values():
             concept_found = any(keyword in content for keyword in concept_keywords)
             if concept_found:
-                score += 0.1
+                score += 0.05  # Reduced individual concept weight but more concepts
+
+        # Special scoring for fundamental legal principles
+        fundamental_patterns = [
+            '權利能力', '行為能力', '法人', '意思表示',
+            '無效', '得撤銷', '時效', '不當得利'
+        ]
+        if any(pattern in content for pattern in fundamental_patterns):
+            score += 0.15  # Boost for fundamental legal concepts
 
         return min(score, 1.0)  # Cap at 1.0
 
-    def determine_hierarchical_level(self, chunk_type: str, chapter: str) -> int:
-        """Determine hierarchical level for chunk"""
+    def determine_hierarchical_level(self, chunk_type: str, chapter_or_book: str) -> int:
+        """Determine hierarchical level for chunk (支援勞基法章節與民法編別結構)"""
         level_mapping = {
             'law_title': 0,
             'chapter_title': 1,
+            'book_title': 1,  # 民法編別標題
             'article_main': 2,
             'article_items': 3,
             'article_exceptions': 3,
             'article_penalties': 2,  # Penalties are important
             'article_complete': 2
         }
+
+        # 民法總則編條文提升重要性
+        if '總則編' in str(chapter_or_book):
+            base_level = level_mapping.get(chunk_type, 2)
+            return max(0, base_level - 1)  # 提升一層級
+
         return level_mapping.get(chunk_type, 2)
 
     def create_semantic_chunks(self, articles: List[Dict[str, Any]]) -> List[SemanticChunk]:
@@ -289,16 +330,40 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
             cross_refs = self.extract_cross_references(article_number, content)
             importance = self.calculate_importance_score(article, articles)
 
-            # Create base chunk metadata
+            # Create base chunk metadata (支援勞基法和民法結構)
             base_metadata = {
                 'article_number': article_number,
                 'article_title': article['title'],
-                'chapter': article['chapter'],
-                'chapter_number': article['chapter_number'],
                 'source_url': article['url'],
-                'law_name': article.get('law_name', '勞動基準法'),
-                'law_code': article.get('law_code', 'N0030001')
             }
+
+            # 勞基法結構
+            if 'chapter' in article:
+                base_metadata.update({
+                    'chapter': article['chapter'],
+                    'chapter_number': article.get('chapter_number', ''),
+                    'law_name': article.get('law_name', '勞動基準法'),
+                    'law_code': article.get('law_code', 'N0030001')
+                })
+                chapter_or_book = article['chapter']
+
+            # 民法結構
+            elif 'book' in article:
+                base_metadata.update({
+                    'book': article['book'],
+                    'book_number': article.get('book_number', ''),
+                    'law_name': article.get('law_name', '民法'),
+                    'law_code': article.get('law_code', 'B0000001')
+                })
+                chapter_or_book = article['book']
+
+            else:
+                # 預設結構
+                base_metadata.update({
+                    'law_name': article.get('law_name', '法規'),
+                    'law_code': article.get('law_code', '')
+                })
+                chapter_or_book = ''
 
             # Extract article structure for detailed chunking
             structure = self.extract_article_structure(content)
@@ -315,11 +380,11 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
                     },
                     chunk_id=f"art_{article_number}_main",
                     article_number=article_number,
-                    chapter=article['chapter'],
+                    chapter=article.get('chapter', article.get('book', '')),
                     semantic_keywords=keywords,
                     cross_references=cross_refs,
                     importance_score=importance,
-                    hierarchical_level=self.determine_hierarchical_level('article_main', article['chapter']),
+                    hierarchical_level=self.determine_hierarchical_level('article_main', chapter_or_book),
                     related_concepts=concepts
                 )
                 semantic_chunks.append(chunk)
@@ -341,11 +406,11 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
                             },
                             chunk_id=f"art_{article_number}_items_{i}",
                             article_number=article_number,
-                            chapter=article['chapter'],
+                            chapter=article.get('chapter', article.get('book', '')),
                             semantic_keywords=keywords,
                             cross_references=cross_refs,
                             importance_score=importance * 0.8,  # Items are slightly less important
-                            hierarchical_level=self.determine_hierarchical_level('article_items', article['chapter']),
+                            hierarchical_level=self.determine_hierarchical_level('article_items', chapter_or_book),
                             related_concepts=concepts
                         )
                         semantic_chunks.append(chunk)
@@ -359,11 +424,11 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
                         },
                         chunk_id=f"art_{article_number}_items",
                         article_number=article_number,
-                        chapter=article['chapter'],
+                        chapter=article.get('chapter', article.get('book', '')),
                         semantic_keywords=keywords,
                         cross_references=cross_refs,
                         importance_score=importance * 0.8,
-                        hierarchical_level=self.determine_hierarchical_level('article_items', article['chapter']),
+                        hierarchical_level=self.determine_hierarchical_level('article_items', chapter_or_book),
                         related_concepts=concepts
                     )
                     semantic_chunks.append(chunk)
@@ -380,11 +445,11 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
                     },
                     chunk_id=f"art_{article_number}_penalties",
                     article_number=article_number,
-                    chapter=article['chapter'],
+                    chapter=article.get('chapter', article.get('book', '')),
                     semantic_keywords=keywords + ['處罰', '罰鍰', '刑責'],
                     cross_references=cross_refs,
                     importance_score=min(importance + 0.3, 1.0),  # Penalties are very important
-                    hierarchical_level=self.determine_hierarchical_level('article_penalties', article['chapter']),
+                    hierarchical_level=self.determine_hierarchical_level('article_penalties', chapter_or_book),
                     related_concepts=concepts + ['處罰']
                 )
                 semantic_chunks.append(chunk)
@@ -401,11 +466,11 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
                     },
                     chunk_id=f"art_{article_number}_exceptions",
                     article_number=article_number,
-                    chapter=article['chapter'],
+                    chapter=article.get('chapter', article.get('book', '')),
                     semantic_keywords=keywords + ['例外', '但是'],
                     cross_references=cross_refs,
                     importance_score=importance * 0.9,
-                    hierarchical_level=self.determine_hierarchical_level('article_exceptions', article['chapter']),
+                    hierarchical_level=self.determine_hierarchical_level('article_exceptions', chapter_or_book),
                     related_concepts=concepts
                 )
                 semantic_chunks.append(chunk)
@@ -422,11 +487,11 @@ class EnhancedLegalProcessor(LegalDocumentProcessor):
                     },
                     chunk_id=f"art_{article_number}_full",
                     article_number=article_number,
-                    chapter=article['chapter'],
+                    chapter=article.get('chapter', article.get('book', '')),
                     semantic_keywords=keywords,
                     cross_references=cross_refs,
                     importance_score=importance,
-                    hierarchical_level=self.determine_hierarchical_level('article_complete', article['chapter']),
+                    hierarchical_level=self.determine_hierarchical_level('article_complete', chapter_or_book),
                     related_concepts=concepts
                 )
                 semantic_chunks.append(chunk)

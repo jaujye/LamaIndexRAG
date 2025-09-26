@@ -55,15 +55,32 @@ class LegalQueryExpander:
 
     def __init__(self):
         self.legal_synonyms = {
+            # 勞動法相關同義詞
             '勞動契約': ['勞動契約', '工作契約', '僱傭契約', '聘僱關係'],
             '工資': ['工資', '薪資', '薪水', '報酬', '津貼'],
             '工作時間': ['工作時間', '工時', '勞動時間', '上班時間'],
             '休假': ['休假', '假期', '請假', '特別休假'],
             '解僱': ['解僱', '終止契約', '資遣', '開除'],
             '職業安全': ['職業安全', '工安', '勞工安全', '作業安全'],
+
+            # 食品安全法相關同義詞
             '食品安全': ['食品安全', '食安', '食品衛生', '食品品質'],
             '添加物': ['添加物', '食品添加劑', '化學添加物'],
-            '標示': ['標示', '標籤', '包裝標示', '成分標示']
+            '標示': ['標示', '標籤', '包裝標示', '成分標示'],
+
+            # 民法相關同義詞
+            '契約': ['契約', '合約', '協議', '約定'],
+            '買賣': ['買賣', '買賣契約', '購買', '販售'],
+            '租賃': ['租賃', '租借', '出租', '承租'],
+            '物權': ['物權', '所有權', '財產權', '物的權利'],
+            '債權': ['債權', '債務', '債權債務', '債之關係'],
+            '侵權': ['侵權', '侵權行為', '不法行為'],
+            '損害賠償': ['損害賠償', '賠償', '補償', '賠償責任'],
+            '繼承': ['繼承', '遺產', '遺產繼承', '財產繼承'],
+            '婚姻': ['婚姻', '結婚', '夫妻', '配偶'],
+            '親屬': ['親屬', '家屬', '親人', '家族'],
+            '監護': ['監護', '監護權', '照護', '保護'],
+            '法律行為': ['法律行為', '意思表示', '法律效果']
         }
 
         self.concept_patterns = {
@@ -101,8 +118,11 @@ class LegalQueryExpander:
             target_collections.append('labor_law')
         if any(term in query for term in ['食品', '食安', '添加物', '食品安全法']):
             target_collections.append('food_safety_act')
+        if any(term in query for term in ['民法', '契約', '買賣', '租賃', '物權', '債權',
+                                          '侵權', '繼承', '婚姻', '親屬', '監護', '法律行為']):
+            target_collections.append('civil_law')
         if not target_collections:
-            target_collections = ['labor_law', 'food_safety_act']  # Search both
+            target_collections = ['labor_law', 'food_safety_act', 'civil_law']  # Search all
 
         return QueryContext(
             original_query=query,
@@ -485,7 +505,7 @@ class AdvancedRAGSystem:
                 chroma_client = chromadb.PersistentClient(path=self.local_db_path)
 
         # Initialize collections (using correct names)
-        collections = ['food_safety_act', 'labor_law']
+        collections = ['food_safety_act', 'labor_law', 'civil_law']
 
         for collection_name in collections:
             try:
@@ -603,7 +623,10 @@ def main():
         "勞動契約的規定",
         "食品添加物的標示要求",
         "違反勞基法的罰則",
-        "什麼是工作時間"
+        "什麼是工作時間",
+        "買賣契約的成立要件",
+        "繼承權的規定",
+        "侵權行為的損害賠償"
     ]
 
     for query in test_queries:
