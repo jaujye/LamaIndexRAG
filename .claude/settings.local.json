@@ -43,7 +43,9 @@
       "Bash(python:*)",
       "Bash(.venv/Scripts/python.exe:*)",
       "Bash(.venv\\Scripts\\python.exe main.py:*)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(git branch:*)",
+      "WebFetch(domain:law.moj.gov.tw)"
     ],
     "deny": [],
     "ask": []

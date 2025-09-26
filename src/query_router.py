@@ -19,6 +19,7 @@ class KnowledgeBase(Enum):
     """Available knowledge bases"""
     LABOR_LAW = "labor_law"
     FOOD_SAFETY = "food_safety_act"
+    CIVIL_LAW = "civil_law"
     ALL = "all"
 
 
@@ -62,6 +63,15 @@ class LegalDomainClassifier:
                            '製造', '加工', '販售', '進口', '輸入'],
                 'secondary': ['安全', '品質', '檢驗', '認證', '管理', '監督'],
                 'legal_concepts': ['第三條', '第十五條', '食品安全衛生管理法']
+            },
+            KnowledgeBase.CIVIL_LAW: {
+                'primary': ['民法', '契約', '買賣', '租賃', '贈與', '物權', '債權',
+                           '所有權', '抵押', '侵權', '損害賠償', '婚姻', '離婚',
+                           '繼承', '遺產', '遺囑', '親屬', '監護', '扶養'],
+                'secondary': ['權利', '義務', '責任', '法律行為', '意思表示', '無效',
+                             '撤銷', '時效', '法人', '自然人', '能力', '代理'],
+                'legal_concepts': ['總則編', '債編', '物權編', '親屬編', '繼承編',
+                                  '第一條', '第二條', '民法']
             }
         }
 
@@ -70,6 +80,10 @@ class LegalDomainClassifier:
             r'.*(?:勞工|員工).*(?:食品|餐廳).*',  # Workers in food industry
             r'.*(?:食品|餐廳).*(?:勞動|工作).*',  # Food industry labor
             r'.*(?:職業安全|工安).*(?:食品|廚房).*',  # Food industry safety
+            r'.*(?:勞動契約|僱傭契約).*(?:民法|契約法).*',  # Labor contracts and civil law
+            r'.*(?:民法).*(?:勞基法|勞動法).*',  # Civil law and labor law
+            r'.*(?:契約).*(?:勞工|雇主).*',  # Contracts involving workers
+            r'.*(?:侵權).*(?:職業災害|工傷).*',  # Tort law and workplace injuries
             r'.*(?:法律|法規|規定).*(?:比較|對比).*'  # Legal comparisons
         ]
 
@@ -117,7 +131,7 @@ class LegalDomainClassifier:
             if re.match(pattern, query):
                 return RouteDecision(
                     primary_kb=KnowledgeBase.ALL,
-                    secondary_kbs=[KnowledgeBase.LABOR_LAW, KnowledgeBase.FOOD_SAFETY],
+                    secondary_kbs=[KnowledgeBase.LABOR_LAW, KnowledgeBase.FOOD_SAFETY, KnowledgeBase.CIVIL_LAW],
                     confidence_score=0.9,
                     reasoning="Cross-domain query detected",
                     query_context=query_context,
@@ -160,7 +174,7 @@ class LegalDomainClassifier:
             # No clear domain match - use all knowledge bases
             return RouteDecision(
                 primary_kb=KnowledgeBase.ALL,
-                secondary_kbs=[KnowledgeBase.LABOR_LAW, KnowledgeBase.FOOD_SAFETY],
+                secondary_kbs=[KnowledgeBase.LABOR_LAW, KnowledgeBase.FOOD_SAFETY, KnowledgeBase.CIVIL_LAW],
                 confidence_score=0.3,
                 reasoning="No clear domain detected, searching all knowledge bases",
                 query_context=query_context,
@@ -185,7 +199,7 @@ class LegalDomainClassifier:
             if preferred_kb == KnowledgeBase.ALL:
                 return RouteDecision(
                     primary_kb=KnowledgeBase.ALL,
-                    secondary_kbs=[KnowledgeBase.LABOR_LAW, KnowledgeBase.FOOD_SAFETY],
+                    secondary_kbs=[KnowledgeBase.LABOR_LAW, KnowledgeBase.FOOD_SAFETY, KnowledgeBase.CIVIL_LAW],
                     confidence_score=0.8,
                     reasoning=f"Intent '{query_context.intent_type}' suggests multi-domain search",
                     query_context=query_context,
@@ -265,8 +279,15 @@ class ResponseFusion:
         # Combine top responses with clear attribution
         fused = f"根據相關法規，主要資訊如下：\n\n"
 
-        for i, (score, kb_name, response_text) in enumerate(ranked_responses[:2]):
-            domain_name = "勞動基準法" if kb_name == "labor_law" else "食品安全法"
+        for i, (score, kb_name, response_text) in enumerate(ranked_responses[:3]):
+            if kb_name == "labor_law":
+                domain_name = "勞動基準法"
+            elif kb_name == "food_safety_act":
+                domain_name = "食品安全法"
+            elif kb_name == "civil_law":
+                domain_name = "民法"
+            else:
+                domain_name = "法規"
             fused += f"{i+1}. 依據{domain_name}：\n{response_text}\n\n"
 
         return fused.strip()
@@ -296,13 +317,28 @@ class ResponseFusion:
                 return primary_response
 
             # Combine primary with relevant secondary information
-            domain_name = "勞動基準法" if primary_kb_name == "labor_law" else "食品安全法"
+            if primary_kb_name == "labor_law":
+                domain_name = "勞動基準法"
+            elif primary_kb_name == "food_safety_act":
+                domain_name = "食品安全法"
+            elif primary_kb_name == "civil_law":
+                domain_name = "民法"
+            else:
+                domain_name = "法規"
+
             fused = f"依據{domain_name}：\n{primary_response}"
 
             if secondary_responses:
                 fused += "\n\n相關資訊："
                 for kb_name, response_text in secondary_responses:
-                    other_domain = "食品安全法" if kb_name == "food_safety_act" else "勞動基準法"
+                    if kb_name == "labor_law":
+                        other_domain = "勞動基準法"
+                    elif kb_name == "food_safety_act":
+                        other_domain = "食品安全法"
+                    elif kb_name == "civil_law":
+                        other_domain = "民法"
+                    else:
+                        other_domain = "法規"
                     fused += f"\n- {other_domain}：{response_text[:200]}..."
 
             return fused
@@ -386,7 +422,7 @@ class QueryRouter:
 
             if route_decision.primary_kb == KnowledgeBase.ALL:
                 # Query all available knowledge bases
-                target_kbs = [KnowledgeBase.LABOR_LAW, KnowledgeBase.FOOD_SAFETY]
+                target_kbs = [KnowledgeBase.LABOR_LAW, KnowledgeBase.FOOD_SAFETY, KnowledgeBase.CIVIL_LAW]
             else:
                 # Query primary and any secondary knowledge bases
                 target_kbs = [route_decision.primary_kb] + route_decision.secondary_kbs
@@ -474,13 +510,17 @@ def main():
         "勞動契約的規定是什麼",
         "食品添加物的標示要求",
         "工作時間的計算方式",
+        "買賣契約的成立要件",
+        "繼承權的規定",
 
         # Cross-domain queries
         "餐廳員工的工作安全規定",
         "食品業勞工的工作時間規定",
+        "勞動契約與民法契約的關係",
+        "員工職業災害的民法賠償責任",
 
-        # General queries that might need both
-        "什麼是職業安全衛生",
+        # General queries that might need multiple laws
+        "什麼是契約責任",
         "違法的處罰規定"
     ]
 
