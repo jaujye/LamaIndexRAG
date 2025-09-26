@@ -401,7 +401,7 @@ class QueryRouter:
                     query=query,
                     route_decision=route_decision,
                     responses={},
-                    fused_response="你好！有什麼法規問題需要我幫忙解答嗎？我可以協助查詢勞基法、食品安全法等相關法規資訊。",
+                    fused_response="你好！有什麼法規問題需要我幫忙解答嗎？我可以協助查詢勞基法、食品安全法、民法等相關法規資訊。",
                     metadata={
                         "query_type": "conversational",
                         "processing_time": 0,

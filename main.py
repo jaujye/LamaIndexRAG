@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 台灣法規 RAG 知識檢索系統
-支持食品安全衛生管理法、勞動基準法及多法規整合查詢
+支持食品安全衛生管理法、勞動基準法、民法及多法規整合查詢
 主要CLI介面程式
 """
 
@@ -68,7 +68,7 @@ from src.monitoring import WandbMonitor, initialize_global_monitor, create_confi
 
 
 class LegalRAGCLI:
-    """台灣法規RAG系統的CLI介面，支持食品安全法、勞基法及多法規整合查詢，整合 W&B 監控"""
+    """台灣法規RAG系統的CLI介面，支持食品安全法、勞基法、民法及多法規整合查詢，整合 W&B 監控"""
 
     def __init__(self, enable_monitoring: bool = True):
         # Initialize console with UTF-8 for Windows compatibility
@@ -171,7 +171,7 @@ class LegalRAGCLI:
 
         # 檢查資料檔案
         if not self.food_safety_data_file.exists() and not self.labor_law_data_file.exists() and not self.civil_law_data_file.exists():
-            issues.append("[FAIL] 未找到法規資料檔案，需要先下載法規內容（食品安全法、勞基法或民法）")
+            issues.append("[FAIL] 未找到法規資料檔案，需要先下載法規內容（食品安全法、勞基法、民法）")
 
         if issues:
             self.console.print("\n[red]環境設置問題：[/red]")
@@ -721,7 +721,7 @@ class LegalRAGCLI:
         """多法規整合互動式查詢介面"""
         self.console.print("\n" + "="*60)
         panel_text = "[bold blue]台灣多法規整合 RAG 知識檢索系統[/bold blue]\n" \
-                    "支持食品安全法、勞基法及跨法規查詢\n" \
+                    "支持食品安全法、勞基法、民法及跨法規查詢\n" \
                     "系統將智能路由您的問題到最適合的法規知識庫\n" \
                     "[dim]輸入 'quit' 或 'exit' 結束程式[/dim]"
 
@@ -857,7 +857,12 @@ class LegalRAGCLI:
 
             for kb_name, kb_response in response.responses.items():
                 if "error" not in kb_response:
-                    law_name = "勞基法" if kb_name == "labor_law" else "食品安全法"
+                    law_name_mapping = {
+                        "labor_law": "勞基法",
+                        "food_safety_act": "食品安全法",
+                        "civil_law": "民法"
+                    }
+                    law_name = law_name_mapping.get(kb_name, "未知法規")
                     doc_count = len(kb_response.get('metadata', {}).get('retrieved_nodes', []))
                     answer_preview = kb_response.get('response', '')
 
@@ -1161,7 +1166,7 @@ class LegalRAGCLI:
 def main():
     """主程式入口"""
     parser = argparse.ArgumentParser(
-        description="台灣法規 RAG 知識檢索系統 - 支持食品安全法、勞基法及多法規整合查詢 (含 W&B 監控)",
+        description="台灣法規 RAG 知識檢索系統 - 支持食品安全法、勞基法、民法及多法規整合查詢 (含 W&B 監控)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
