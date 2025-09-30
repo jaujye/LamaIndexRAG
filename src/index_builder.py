@@ -76,6 +76,39 @@ class LegalIndexBuilder:
         self.index: Optional[VectorStoreIndex] = None
         self.vector_store: Optional[ChromaVectorStore] = None
 
+    def __enter__(self):
+        """Context manager entry - allows 'with' statement usage"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures resource cleanup"""
+        self.close()
+        return False
+
+    def close(self):
+        """
+        Explicitly close ChromaDB client to prevent resource leaks.
+
+        Note: ChromaDB clients don't have a standard close() method,
+        but we can help with cleanup by clearing references.
+        """
+        if hasattr(self, 'chroma_client') and self.chroma_client:
+            # Clear the reference to allow garbage collection
+            self.chroma_client = None
+
+        if hasattr(self, 'vector_store') and self.vector_store:
+            self.vector_store = None
+
+        if hasattr(self, 'index') and self.index:
+            self.index = None
+
+    def __del__(self):
+        """Destructor - cleanup resources if not already closed"""
+        try:
+            self.close()
+        except Exception:
+            pass  # Ignore errors during cleanup
+
     def _parse_host_from_url(self, url: str) -> str:
         """Extract host from URL"""
         from urllib.parse import urlparse

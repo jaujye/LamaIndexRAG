@@ -2,6 +2,18 @@
 """
 台灣食品安全衛生管理法 RAG 知識檢索系統
 主要CLI介面程式 (不含 W&B 監控)
+
+[WARNING] DEPRECATION WARNING:
+    此檔案已被棄用。請使用更強大的模組化版本:
+
+    python main.py --no-monitoring
+
+    新版本支援:
+    - 食品安全法、勞基法、民法 (三種法規)
+    - 單一法規與多法規整合查詢
+    - 更好的架構與可維護性
+
+    此檔案僅保留作為向後相容性。
 """
 
 import os
@@ -347,6 +359,15 @@ class FoodSafetyRAGCLI:
 
 def main():
     """主程式入口"""
+    # Display deprecation warning
+    print("\n" + "="*70)
+    print("[WARNING] DEPRECATION WARNING")
+    print("="*70)
+    print("main_no_wandb.py 已被棄用，請改用:")
+    print("  python main.py --no-monitoring")
+    print("\n新版本功能更完整，支援三種法規與多領域整合查詢。")
+    print("="*70 + "\n")
+
     parser = argparse.ArgumentParser(
         description="台灣食品安全衛生管理法 RAG 知識檢索系統 (簡化版)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
