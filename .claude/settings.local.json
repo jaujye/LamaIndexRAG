@@ -45,7 +45,10 @@
       "Bash(.venv\\Scripts\\python.exe main.py:*)",
       "Bash(git mv:*)",
       "Bash(git branch:*)",
-      "WebFetch(domain:law.moj.gov.tw)"
+      "WebFetch(domain:law.moj.gov.tw)",
+      "Bash(git remote:*)",
+      "Bash(git fetch:*)",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []

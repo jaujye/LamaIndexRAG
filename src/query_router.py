@@ -13,6 +13,7 @@ import logging
 
 # Import our advanced RAG system
 from .legal_multi_domain_rag import AdvancedRAGSystem, QueryContext, LegalQueryExpander
+from .chroma_client_manager import ChromaClientManager
 
 
 class KnowledgeBase(Enum):
@@ -351,6 +352,13 @@ class QueryRouter:
     """Main query router orchestrating the multi-domain legal RAG system"""
 
     def __init__(self, chroma_host: str = None, chroma_port: int = None):
+        """
+        Initialize Query Router.
+
+        Args:
+            chroma_host: ChromaDB host (optional, will use shared client manager)
+            chroma_port: ChromaDB port (optional, will use shared client manager)
+        """
         # Load environment variables
         from dotenv import load_dotenv
         import os
@@ -370,10 +378,17 @@ class QueryRouter:
         self.query_expander = LegalQueryExpander()
         self.response_fusion = ResponseFusion()
 
-        # Initialize RAG system
-        self.rag_system = AdvancedRAGSystem(
+        # Get shared ChromaDB client from manager
+        chroma_client = ChromaClientManager.get_client(
             chroma_host=chroma_host,
             chroma_port=chroma_port
+        )
+
+        # Initialize RAG system with shared client
+        self.rag_system = AdvancedRAGSystem(
+            chroma_host=chroma_host,
+            chroma_port=chroma_port,
+            chroma_client=chroma_client  # Pass shared client
         )
 
         # Query statistics for optimization

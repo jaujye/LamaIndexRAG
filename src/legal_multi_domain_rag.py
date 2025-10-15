@@ -28,6 +28,8 @@ import re
 from collections import defaultdict
 import logging
 
+from .chroma_client_manager import ChromaClientManager
+
 
 @dataclass
 class RetrievalResult:
@@ -419,8 +421,18 @@ class AdvancedRAGSystem:
         self,
         chroma_host: str = None,
         chroma_port: int = None,
-        local_db_path: str = None
+        local_db_path: str = None,
+        chroma_client: Optional[chromadb.ClientAPI] = None
     ):
+        """
+        Initialize Advanced RAG System.
+
+        Args:
+            chroma_host: ChromaDB host (for remote connections)
+            chroma_port: ChromaDB port (for remote connections)
+            local_db_path: Local database path (unused if chroma_client provided)
+            chroma_client: Shared ChromaDB client instance (recommended to avoid conflicts)
+        """
         # Load environment variables
         load_dotenv()
 
@@ -435,6 +447,10 @@ class AdvancedRAGSystem:
             self.chroma_port = chroma_port or 8000
 
         self.local_db_path = local_db_path or os.getenv("CHROMA_DB_PATH", "chroma_db")
+
+        # Use provided client or get from manager
+        self.chroma_client = chroma_client
+
         self.vector_stores = {}
         self.retrievers = {}
         self.hybrid_retriever = None
@@ -444,7 +460,7 @@ class AdvancedRAGSystem:
         self._init_vector_stores()
 
     def _init_vector_stores(self):
-        """Initialize vector stores for different collections"""
+        """Initialize vector stores for different collections using shared ChromaDB client"""
 
         # Configure OpenAI embedding model to match collection dimensions (1536)
         try:
@@ -471,38 +487,20 @@ class AdvancedRAGSystem:
                 print("[ERROR] No suitable embedding model available")
                 raise
 
-        # Try remote ChromaDB first, fallback to local
-        # Configure ChromaDB settings to disable telemetry (comprehensive approach)
-        chroma_settings = ChromaSettings(
-            anonymized_telemetry=False,
-            allow_reset=True,
-            chroma_server_ssl_enabled=False,
-            chroma_server_cors_allow_origins=["*"]
-        )
-
-        try:
-            chroma_client = chromadb.HttpClient(
-                host=self.chroma_host,
-                port=self.chroma_port,
-                settings=chroma_settings
+        # Get or create ChromaDB client
+        if self.chroma_client is None:
+            # No client provided, use ChromaClientManager to get shared instance
+            print("[INFO] Using ChromaClientManager for shared client instance")
+            self.chroma_client = ChromaClientManager.get_client(
+                chroma_host=self.chroma_host,
+                chroma_port=self.chroma_port,
+                force_local=False
             )
-            # Test connection
-            chroma_client.heartbeat()
-            print(f"[OK] Connected to remote ChromaDB at {self.chroma_host}:{self.chroma_port}")
-        except Exception as e:
-            print(f"[WARN] Remote ChromaDB failed: {e}")
-            print(f"[OK] Using local ChromaDB at: {self.local_db_path}")
+        else:
+            print("[INFO] Using provided ChromaDB client instance")
 
-            # For local ChromaDB, don't specify tenant/database to avoid validation issues
-            try:
-                chroma_client = chromadb.PersistentClient(
-                    path=self.local_db_path,
-                    settings=chroma_settings
-                )
-            except Exception as local_error:
-                print(f"[WARN] Local ChromaDB with settings failed: {local_error}")
-                # Last resort: minimal configuration
-                chroma_client = chromadb.PersistentClient(path=self.local_db_path)
+        # Assign to local variable for convenience
+        chroma_client = self.chroma_client
 
         # Initialize collections (using correct names)
         collections = ['food_safety_act', 'labor_law', 'civil_law']
