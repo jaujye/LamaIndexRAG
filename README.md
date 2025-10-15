@@ -4,13 +4,13 @@
 
 <div align="center">
 
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
-![OpenAI](https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white)
-![LlamaIndex](https://img.shields.io/badge/LlamaIndex-FF6B35?style=for-the-badge&logo=llama&logoColor=white)
-![ChromaDB](https://img.shields.io/badge/ChromaDB-FF6B35?style=for-the-badge&logo=database&logoColor=white)
-![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Rich](https://img.shields.io/badge/Rich-000000?style=for-the-badge&logo=python&logoColor=white)
-![Weights & Biases](https://img.shields.io/badge/Weights_&_Biases-FFBE00?style=for-the-badge&logo=weightsandbiases&logoColor=black)
+![Python](https://img.shields.io/badge/Python-3.8+-3776AB.svg?logo=python&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-API-412991.svg?logo=openai&logoColor=white)
+![LlamaIndex](https://img.shields.io/badge/LlamaIndex-0.10.11-8B5CF6.svg?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIgMkw0IDZWMTJMMTIgMTZMMjAgMTJWNkwxMiAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-0.4.24-FF6F00.svg?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI4IiBmaWxsPSJ3aGl0ZSIvPjwvc3ZnPg==&logoColor=white)
+![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup4-4.12.3-3776AB.svg?logo=python&logoColor=white)
+![Rich](https://img.shields.io/badge/Rich-13.7.0-009485.svg?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIGZpbGw9IndoaXRlIi8+PC9zdmc+&logoColor=white)
+![Weights & Biases](https://img.shields.io/badge/W%26B-0.15.0-FFBE00.svg?logo=weightsandbiases&logoColor=black)
 
 </div>
 
@@ -31,6 +31,9 @@
 - 🏗️ **模組化架構**：採用單一職責原則設計，易於維護和擴展
 - 🔒 **資源管理**：完善的 Context Manager 設計，防止資源洩漏
 - 🎯 **統一資料模型**：一致的 LegalArticle 模型跨所有法規領域
+- ⚡ **ChromaDB 客戶端管理器**：單例模式避免多實例衝突，確保系統穩定性
+- ✅ **配置驗證機制**：啟動時自動檢查配置，Fail-Fast 原則立即發現問題
+- 🛠️ **獨立驗證工具**：提供配置檢查腳本，友好的錯誤提示和修復建議
 
 ## 環境需求
 
@@ -65,7 +68,48 @@ WANDB_PROJECT=food-safety-rag
 WANDB_MODE=online  # online, offline, disabled
 ```
 
-### 3. 選擇執行模式
+### 3. 驗證配置（推薦）
+
+在啟動系統前，建議先驗證配置是否正確：
+
+```bash
+python scripts/validate_config.py
+```
+
+**驗證內容**：
+- ✅ OpenAI API Key 格式和有效性
+- ✅ LLM 模型名稱是否有效
+- ✅ 嵌入模型配置檢查
+- ✅ 溫度參數範圍驗證
+- 💡 提供智能的配置建議
+
+**範例輸出（配置正確）**：
+```
+✅ 配置驗證通過！
+
+配置摘要：
+  LLM 模型: gpt-4o-mini
+  嵌入模型: text-embedding-3-small
+  溫度參數: 0.1
+
+系統已準備就緒，可以啟動 RAG 系統 ✨
+```
+
+**範例輸出（配置錯誤）**：
+```
+❌ 配置驗證失敗！
+
+錯誤：
+  ❌ 無效的 LLM 模型: 'gpt-4.1-nano'
+   建議使用: gpt-4o-mini (經濟), gpt-3.5-turbo (快速), gpt-4o (強大)
+
+💡 推薦配置：
+  經濟型配置: OPENAI_LLM_MODEL=gpt-4o-mini
+  平衡型配置: OPENAI_LLM_MODEL=gpt-3.5-turbo
+  性能型配置: OPENAI_LLM_MODEL=gpt-4o
+```
+
+### 4. 選擇執行模式
 
 系統提供三種執行方式，依據您的需求選擇：
 
@@ -111,13 +155,14 @@ python ultrathink.py
 - 📊 詳細查詢分析和統計
 
 **系統會自動**：
-1. 檢查環境設定
-2. 下載法規資料（如果尚未存在）
-3. 建立向量索引
-4. 初始化監控（如啟用）
-5. 啟動互動式問答介面
+1. 驗證配置（檢查 LLM 模型、API key 等）
+2. 檢查環境設定
+3. 下載法規資料（如果尚未存在）
+4. 建立向量索引
+5. 初始化監控（如啟用）
+6. 啟動互動式問答介面
 
-### 4. CLI 指令詳解
+### 5. CLI 指令詳解
 
 #### 查詢模式
 
@@ -263,6 +308,8 @@ LamaIndex/
 │   │   ├── index_manager.py         # 索引管理
 │   │   ├── cli_renderer.py          # UI 渲染
 │   │   └── query_handler.py         # 查詢處理
+│   ├── chroma_client_manager.py  # ChromaDB 客戶端管理器（單例模式）
+│   ├── config_validator.py       # 配置驗證器（Fail-Fast）
 │   ├── legal_base_fetcher.py     # 基礎擷取器（消除 600+ 行重複）
 │   ├── legal_food_safety_fetcher.py # 食品安全法擷取器
 │   ├── labor_law_fetcher.py      # 勞基法擷取器
@@ -279,6 +326,7 @@ LamaIndex/
 │   ├── test_*.py                # 各模組測試
 │   └── ...
 ├── scripts/                      # 工具腳本
+│   ├── validate_config.py       # 配置驗證工具（獨立腳本）
 │   ├── build_labor_index.py     # 勞基法索引建構
 │   ├── check_collections.py     # 資料庫檢查工具
 │   └── system_performance_test.py # 系統效能測試
@@ -492,10 +540,19 @@ class MyFeatureManager:
 
 ### Q: 程式啟動失敗怎麼辦？
 A: 按照以下步驟排除：
-1. **停用監控測試**：`python main.py --no-monitoring --help`
-2. **檢查環境**：確認已設定 `OPENAI_API_KEY`
-3. **檢視詳細錯誤**：詳細錯誤訊息通常會指出問題所在
-4. **使用簡化版**（不推薦）：`python main_no_wandb.py --help`（此版本已棄用）
+1. **先驗證配置**：`python scripts/validate_config.py`（最推薦！）
+2. **檢查配置錯誤**：系統會自動提示無效的 LLM 模型或 API key 格式問題
+3. **停用監控測試**：`python main.py --no-monitoring --help`
+4. **檢查環境**：確認已設定 `OPENAI_API_KEY`
+5. **檢視詳細錯誤**：詳細錯誤訊息通常會指出問題所在
+6. **使用簡化版**（不推薦）：`python main_no_wandb.py --help`（此版本已棄用）
+
+### Q: 配置驗證失敗怎麼辦？
+A: 配置驗證工具會提供詳細的錯誤訊息和修復建議：
+- **無效的 LLM 模型**：工具會建議有效的模型名稱（如 gpt-4o-mini, gpt-3.5-turbo）
+- **API Key 格式錯誤**：檢查 API key 是否以 'sk-' 開頭且長度足夠
+- **溫度參數超出範圍**：建議值為 0.0-2.0 之間
+- **查看推薦配置**：工具會顯示經濟型、平衡型、性能型三種配置選項
 
 ### Q: W&B 監控相關問題
 A: 監控功能疑難排解：
@@ -661,6 +718,19 @@ python main_no_wandb.py --help
 ---
 
 ## 📝 版本歷程
+
+### v2.1 (2025-01) - 穩定性與用戶體驗提升
+- ⚡ **ChromaDB 客戶端管理器**：實現單例模式，解決多實例衝突問題
+- ✅ **配置驗證機制**：Fail-Fast 原則，啟動時自動檢查 LLM 模型配置
+- 🛠️ **獨立驗證工具**：提供 `validate_config.py` 腳本，友好的配置檢查
+- 🔧 **統一配置管理**：標準化 ChromaDB 路徑和 Settings，避免配置衝突
+- 💡 **智能配置建議**：自動推薦相似的有效模型名稱
+- 📊 **增強錯誤提示**：詳細的錯誤訊息和具體的修復指引
+
+**技術改進**：
+- 消除 "An instance of Chroma already exists" 錯誤
+- 防止無效 LLM 模型導致的運行時失敗
+- 提升用戶配置體驗，立即發現問題
 
 ### v2.0 (2025) - 模組化重構版本
 - 完成三階段重構，提升系統品質 60%
