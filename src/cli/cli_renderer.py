@@ -308,11 +308,32 @@ class CLIRenderer:
             result: ValidationResult object with passed status and issues list
         """
         if result.passed:
-            self.console.print("[green]環境檢查通過[/green]")
+            self.console.print("[green]✓ 環境檢查通過[/green]")
+
+            # Display warnings if any
+            if result.warnings and len(result.warnings) > 0:
+                self.console.print("\n[yellow]⚠️  配置警告：[/yellow]")
+                for warning in result.warnings:
+                    self.console.print(f"  {warning}")
+
+            # Display config summary in compact format
+            if result.config_summary:
+                self.console.print("\n[dim]配置摘要：[/dim]")
+                important_keys = ['llm_model', 'embedding_model', 'temperature']
+                for key in important_keys:
+                    if key in result.config_summary:
+                        self.console.print(f"  [dim]{key}:[/dim] {result.config_summary[key]}")
+
         else:
-            self.console.print("\n[red]環境設置問題：[/red]")
+            self.console.print("\n[red]❌ 環境設置問題：[/red]")
             for issue in result.issues:
                 self.console.print(f"  {issue}")
+
+            # Display warnings even if validation failed
+            if result.warnings and len(result.warnings) > 0:
+                self.console.print("\n[yellow]⚠️  配置警告：[/yellow]")
+                for warning in result.warnings:
+                    self.console.print(f"  {warning}")
 
     def display_system_header(self, title: str = "台灣法規 RAG 知識檢索系統"):
         """

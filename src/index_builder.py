@@ -22,6 +22,7 @@ from llama_index.core.schema import TextNode
 
 from .legal_basic_processor import LegalDocumentProcessor, LegalChunk
 from .monitoring import WandbMonitor, RAGMetrics, get_memory_usage, monitor_execution_time
+from .chroma_client_manager import ChromaClientManager
 
 
 class LegalIndexBuilder:
@@ -136,87 +137,28 @@ class LegalIndexBuilder:
 
     @monitor_execution_time("chroma_setup_time")
     def _setup_chroma_client(self):
-        """Initialize ChromaDB client with monitoring"""
+        """Initialize ChromaDB client with monitoring using ChromaClientManager"""
         setup_start = time.time()
 
         try:
+            # Parse host and port if remote
+            chroma_host = None
+            chroma_port = None
+
             if self.is_remote:
-                # Remote ChromaDB connection
-                host = self._parse_host_from_url(self.chroma_path_str)
-                port = self._parse_port_from_url(self.chroma_path_str)
+                chroma_host = self._parse_host_from_url(self.chroma_path_str)
+                chroma_port = self._parse_port_from_url(self.chroma_path_str)
+                print(f"[INFO] Connecting to remote ChromaDB at: {chroma_host}:{chroma_port}")
 
-                print(f"Connecting to remote ChromaDB at: {host}:{port}")
+            # Use ChromaClientManager to get the shared client instance
+            self.chroma_client = ChromaClientManager.get_client(
+                chroma_host=chroma_host,
+                chroma_port=chroma_port,
+                force_local=not self.is_remote
+            )
 
-                # First, test basic connectivity
-                import requests
-                heartbeat_response = requests.get(f"http://{host}:{port}/api/v2/heartbeat", timeout=10)
-                if heartbeat_response.status_code != 200:
-                    raise ConnectionError(f"ChromaDB heartbeat failed with status {heartbeat_response.status_code}")
-
-                print("[OK] ChromaDB server is responsive")
-
-                # Try to create client - attempt multiple approaches for compatibility
-                client_created = False
-
-                # Approach 1: Try with explicit tenant/database (newer versions)
-                try:
-                    self.chroma_client = chromadb.HttpClient(
-                        host=host,
-                        port=port,
-                        tenant="default_tenant",
-                        database="default_database",
-                        settings=Settings(
-                            anonymized_telemetry=False,
-                            allow_reset=True
-                        )
-                    )
-                    client_created = True
-                    print("[OK] Connected with tenant/database specification")
-                except Exception as tenant_error:
-                    print(f"[WARN] Tenant/database approach failed: {tenant_error}")
-
-                # Approach 2: Try without tenant specification (older versions)
-                if not client_created:
-                    try:
-                        self.chroma_client = chromadb.HttpClient(
-                            host=host,
-                            port=port,
-                            settings=Settings(
-                                anonymized_telemetry=False,
-                                allow_reset=True
-                            )
-                        )
-                        client_created = True
-                        print("[OK] Connected without tenant specification")
-                    except Exception as no_tenant_error:
-                        print(f"[WARN] No-tenant approach failed: {no_tenant_error}")
-
-                # Approach 3: Simple HttpClient (most basic)
-                if not client_created:
-                    try:
-                        self.chroma_client = chromadb.HttpClient(
-                            host=host,
-                            port=port
-                        )
-                        client_created = True
-                        print("[OK] Connected with basic HttpClient")
-                    except Exception as basic_error:
-                        print(f"[ERROR] Basic HttpClient failed: {basic_error}")
-                        raise basic_error
-
-                print("[OK] ChromaDB HttpClient created successfully")
-
-            else:
-                # Local ChromaDB connection
-                self.chroma_path.mkdir(parents=True, exist_ok=True)
-                self.chroma_client = chromadb.PersistentClient(
-                    path=str(self.chroma_path),
-                    settings=Settings(
-                        anonymized_telemetry=False,
-                        allow_reset=True
-                    )
-                )
-                print(f"[OK] Using local ChromaDB at: {self.chroma_path}")
+            # Update is_remote status based on actual connection
+            self.is_remote = ChromaClientManager.is_remote()
 
             setup_time = time.time() - setup_start
 
@@ -244,16 +186,7 @@ class LegalIndexBuilder:
                     }
                 )
 
-            # If remote connection failed, fallback to local
-            if self.is_remote:
-                print(f"[ERROR] Failed to connect to remote ChromaDB: {e}")
-                print("[WARN] Falling back to local ChromaDB mode...")
-                self.is_remote = False
-                self.chroma_path_str = "./chroma_db"
-                self.chroma_path = Path(self.chroma_path_str)
-                self._setup_chroma_client()  # Retry with local setup
-            else:
-                raise
+            raise
 
     def create_collection(self, reset: bool = False) -> chromadb.Collection:
         """Create or get ChromaDB collection"""

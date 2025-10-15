@@ -5,8 +5,10 @@ Validates system environment including .env files, API keys, and data files
 
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 from dataclasses import dataclass
+
+from src.config_validator import ConfigValidator
 
 
 @dataclass
@@ -14,10 +16,16 @@ class ValidationResult:
     """Result of environment validation"""
     passed: bool
     issues: List[str]
+    warnings: Optional[List[str]] = None
+    config_summary: Optional[Dict[str, str]] = None
 
     @property
     def issues_count(self) -> int:
         return len(self.issues)
+
+    @property
+    def warnings_count(self) -> int:
+        return len(self.warnings) if self.warnings else 0
 
 
 class EnvironmentValidator:
@@ -45,21 +53,33 @@ class EnvironmentValidator:
         self.env_file = env_file
         self.required_keys = required_keys or ["OPENAI_API_KEY"]
 
-    def validate(self, data_files: Optional[List[Path]] = None) -> ValidationResult:
+    def validate(self, data_files: Optional[List[Path]] = None, validate_models: bool = True) -> ValidationResult:
         """
         Perform complete environment validation.
 
         Args:
             data_files: Optional list of data files to check
+            validate_models: Whether to validate LLM model configuration (default: True)
 
         Returns:
             ValidationResult with passed status and any issues found
         """
         issues = []
+        warnings = []
+        config_summary = {}
 
         # Check .env file
         env_issues = self._check_env_file()
         issues.extend(env_issues)
+
+        # Validate OpenAI configuration and models
+        if validate_models:
+            config_validator = ConfigValidator()
+            config_result = config_validator.validate_all()
+
+            issues.extend(config_result.errors)
+            warnings.extend(config_result.warnings)
+            config_summary.update(config_result.config_summary)
 
         # Check data files if provided
         if data_files:
@@ -68,7 +88,9 @@ class EnvironmentValidator:
 
         return ValidationResult(
             passed=len(issues) == 0,
-            issues=issues
+            issues=issues,
+            warnings=warnings if warnings else None,
+            config_summary=config_summary if config_summary else None
         )
 
     def _check_env_file(self) -> List[str]:
